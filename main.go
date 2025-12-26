@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"immich_ml_proxy/config"
 	"immich_ml_proxy/handlers"
 	"log"
@@ -9,6 +10,17 @@ import (
 )
 
 func main() {
+	// Parse command line flags
+	debugMode := flag.Bool("debug", false, "Enable debug mode")
+	flag.Parse()
+
+	// Set Gin mode: Release by default, Debug only if --debug flag is provided
+	if *debugMode {
+		gin.SetMode(gin.DebugMode)
+	} else {
+		gin.SetMode(gin.ReleaseMode)
+	}
+
 	// Load configuration
 	cfg := config.Load()
 	handlers.Init(cfg)
