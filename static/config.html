@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immich ML Proxy - Configuration</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 900px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .section {
+            margin-bottom: 30px;
+        }
+        .section h2 {
+            font-size: 20px;
+            color: #333;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 2px solid #667eea;
+        }
+        .form-group {
+            margin-bottom: 20px;
+        }
+        label {
+            display: block;
+            margin-bottom: 8px;
+            color: #555;
+            font-weight: 500;
+        }
+        input[type="text"], select {
+            width: 100%;
+            padding: 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            transition: border-color 0.3s;
+        }
+        input[type="text"]:focus, select:focus {
+            outline: none;
+            border-color: #667eea;
+        }
+        .backend-list {
+            background: #f8f9fa;
+            border-radius: 8px;
+            padding: 15px;
+            margin-bottom: 15px;
+        }
+        .backend-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        .backend-item:last-child {
+            margin-bottom: 0;
+        }
+        .backend-item input {
+            flex: 1;
+        }
+        .btn {
+            padding: 12px 24px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+            padding: 8px 16px;
+        }
+        .btn-success {
+            background: #28a745;
+            color: white;
+        }
+        .routing-item {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+            align-items: center;
+        }
+        .routing-item input {
+            flex: 2;
+            min-width: 200px;
+        }
+        .routing-item select {
+            flex: 1;
+            min-width: 150px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            display: none;
+        }
+        .status.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+        }
+        .status.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 20px;
+            color: #666;
+        }
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #667eea;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🚀 Immich ML Proxy Configuration</h1>
+            <p>Manage ML backends and task routing</p>
+        </div>
+
+        <div class="content">
+            <div id="status" class="status"></div>
+            <div id="loading" class="loading">Loading...</div>
+
+            <div class="section">
+                <h2>Default Backend</h2>
+                <div class="form-group">
+                    <label for="defaultBackend">Select Default Backend</label>
+                    <select id="defaultBackend">
+                        <option value="">-- Add backends first --</option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Backend Servers</h2>
+                <div id="backendList" class="backend-list"></div>
+                <div class="backend-item">
+                    <input type="text" id="newBackendName" placeholder="Backend name (e.g., backend1)">
+                    <input type="text" id="newBackendURL" placeholder="Backend URL (e.g., http://localhost:3003)">
+                    <button class="btn btn-success" onclick="addBackend()">Add</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <h2>Task Routing</h2>
+                <div id="routingList" class="backend-list"></div>
+                <div class="routing-item">
+                    <input type="text" id="newTaskName" list="taskSuggestions" placeholder="Task name (e.g., facial_recognition)">
+                    <datalist id="taskSuggestions">
+                        <option value="facial_recognition">
+                        <option value="search">
+                        <option value="ocr">
+                    </datalist>
+                    <select id="newTaskBackend">
+                        <option value="">-- Select backend --</option>
+                    </select>
+                    <button class="btn btn-success" onclick="addRouting()">Add</button>
+                </div>
+            </div>
+
+            <div class="section">
+                <button class="btn btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
+                <button class="btn btn-secondary" onclick="loadConfig()">🔄 Reload</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let config = {
+            defaultBackend: '',
+            backends: [],
+            taskRouting: {}
+        };
+
+        function showStatus(message, isError = false) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = 'status ' + (isError ? 'error' : 'success');
+            status.style.display = 'block';
+            setTimeout(() => {
+                status.style.display = 'none';
+            }, 3000);
+        }
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        async function loadConfig() {
+            showLoading(true);
+            try {
+                const response = await fetch('/api/config');
+                if (!response.ok) throw new Error('Failed to load configuration');
+                config = await response.json();
+                renderConfig();
+                showStatus('Configuration loaded successfully');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+            showLoading(false);
+        }
+
+        async function saveConfig() {
+            showLoading(true);
+            try {
+                const response = await fetch('/api/config', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify(config)
+                });
+                if (!response.ok) {
+                    const errorData = await response.json();
+                    throw new Error(errorData.error || 'Failed to save configuration');
+                }
+                showStatus('Configuration saved successfully');
+            } catch (error) {
+                showStatus(error.message, true);
+            }
+            showLoading(false);
+        }
+
+        function renderConfig() {
+            // Render default backend
+            const defaultSelect = document.getElementById('defaultBackend');
+            defaultSelect.innerHTML = '<option value="">-- No default backend --</option>';
+            config.backends.forEach(backend => {
+                const option = document.createElement('option');
+                option.value = backend.name;
+                option.textContent = backend.name + ' (' + backend.url + ')';
+                option.selected = backend.name === config.defaultBackend;
+                defaultSelect.appendChild(option);
+            });
+            defaultSelect.onchange = (e) => {
+                config.defaultBackend = e.target.value;
+            };
+
+            // Render backends
+            const backendList = document.getElementById('backendList');
+            backendList.innerHTML = '';
+            config.backends.forEach((backend, index) => {
+                const div = document.createElement('div');
+                div.className = 'backend-item';
+                div.innerHTML = `
+                    <input type="text" value="${backend.name}" onchange="updateBackend(${index}, 'name', this.value)" placeholder="Name">
+                    <input type="text" value="${backend.url}" onchange="updateBackend(${index}, 'url', this.value)" placeholder="URL">
+                    <button class="btn btn-danger" onclick="removeBackend(${index})">Remove</button>
+                `;
+                backendList.appendChild(div);
+            });
+
+            // Render routing
+            const routingList = document.getElementById('routingList');
+            routingList.innerHTML = '';
+            Object.entries(config.taskRouting).forEach(([task, backendName]) => {
+                const div = document.createElement('div');
+                div.className = 'routing-item';
+                div.innerHTML = `
+                    <input type="text" value="${task}" list="taskSuggestions" onchange="updateRouting('${task}', 'task', this.value)" placeholder="Task">
+                    <select onchange="updateRouting('${task}', 'backend', this.value)">
+                        ${config.backends.map(b => `<option value="${b.name}" ${b.name === backendName ? 'selected' : ''}>${b.name}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-danger" onclick="removeRouting('${task}')">Remove</button>
+                `;
+                routingList.appendChild(div);
+            });
+
+            // Update task backend select
+            const taskBackendSelect = document.getElementById('newTaskBackend');
+            taskBackendSelect.innerHTML = '<option value="">-- Select backend --</option>';
+            config.backends.forEach(backend => {
+                const option = document.createElement('option');
+                option.value = backend.name;
+                option.textContent = backend.name;
+                taskBackendSelect.appendChild(option);
+            });
+        }
+
+        function addBackend() {
+            const name = document.getElementById('newBackendName').value.trim();
+            const url = document.getElementById('newBackendURL').value.trim();
+            if (!name || !url) {
+                showStatus('Please enter backend name and URL', true);
+                return;
+            }
+            if (config.backends.find(b => b.name === name)) {
+                showStatus('Backend name already exists', true);
+                return;
+            }
+            config.backends.push({ name, url });
+            document.getElementById('newBackendName').value = '';
+            document.getElementById('newBackendURL').value = '';
+            renderConfig();
+        }
+
+        function removeBackend(index) {
+            const backendName = config.backends[index].name;
+
+            // Prevent removing if it's the only backend
+            if (config.backends.length === 1) {
+                showStatus('Cannot remove the only backend. At least one backend is required.', true);
+                return;
+            }
+
+            config.backends.splice(index, 1);
+            // Remove routing for this backend
+            Object.keys(config.taskRouting).forEach(task => {
+                if (config.taskRouting[task] === backendName) {
+                    delete config.taskRouting[task];
+                }
+            });
+            if (config.defaultBackend === backendName) {
+                config.defaultBackend = '';
+                showStatus('Default backend removed. Please select a new default backend.', true);
+            }
+            renderConfig();
+        }
+
+        function updateBackend(index, field, value) {
+            config.backends[index][field] = value;
+        }
+
+        function addRouting() {
+            const task = document.getElementById('newTaskName').value.trim();
+            const backend = document.getElementById('newTaskBackend').value;
+            if (!task || !backend) {
+                showStatus('Please enter task name and select backend', true);
+                return;
+            }
+            config.taskRouting[task] = backend;
+            document.getElementById('newTaskName').value = '';
+            document.getElementById('newTaskBackend').value = '';
+            renderConfig();
+        }
+
+        function removeRouting(task) {
+            delete config.taskRouting[task];
+            renderConfig();
+        }
+
+        function updateRouting(oldTask, field, value) {
+            if (field === 'task') {
+                if (oldTask !== value) {
+                    config.taskRouting[value] = config.taskRouting[oldTask];
+                    delete config.taskRouting[oldTask];
+                }
+            } else {
+                config.taskRouting[oldTask] = value;
+            }
+            renderConfig();
+        }
+
+        // Load config on page load
+        loadConfig();
+    </script>
+</body>
+</html>
