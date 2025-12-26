@@ -16,6 +16,9 @@ func main() {
 	// Create Gin router
 	r := gin.Default()
 
+	// Use debug middleware
+	r.Use(handlers.DebugMiddleware())
+
 	// API routes
 	r.GET("/", handlers.RootHandler)
 	r.GET("/ping", handlers.PingHandler)
@@ -25,6 +28,14 @@ func main() {
 	r.GET("/config", handlers.ConfigGetHandler)
 	r.GET("/api/config", handlers.ConfigAPIGetHandler)
 	r.POST("/api/config", handlers.ConfigPostHandler)
+
+	// Debug routes
+	r.GET("/debug", handlers.DebugPageHandler)
+	r.GET("/api/debug/status", handlers.DebugStatusHandler)
+	r.POST("/api/debug/toggle", handlers.DebugToggleHandler)
+	r.POST("/api/debug/max-records", handlers.DebugMaxRecordsHandler)
+	r.GET("/api/debug/records", handlers.DebugRecordsHandler)
+	r.DELETE("/api/debug/records", handlers.DebugClearRecordsHandler)
 
 	// Start server
 	log.Println("Starting Immich ML Proxy on :8080")

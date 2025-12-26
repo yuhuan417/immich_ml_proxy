@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Immich ML Proxy - Debug</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 12px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+        .header {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+        .content {
+            padding: 30px;
+        }
+        .controls {
+            display: flex;
+            gap: 15px;
+            align-items: center;
+            margin-bottom: 20px;
+            flex-wrap: wrap;
+        }
+        .toggle-switch {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .switch {
+            position: relative;
+            display: inline-block;
+            width: 60px;
+            height: 30px;
+        }
+        .switch input {
+            opacity: 0;
+            width: 0;
+            height: 0;
+        }
+        .slider {
+            position: absolute;
+            cursor: pointer;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background-color: #ccc;
+            transition: .4s;
+            border-radius: 30px;
+        }
+        .slider:before {
+            position: absolute;
+            content: "";
+            height: 22px;
+            width: 22px;
+            left: 4px;
+            bottom: 4px;
+            background-color: white;
+            transition: .4s;
+            border-radius: 50%;
+        }
+        input:checked + .slider {
+            background-color: #f5576c;
+        }
+        input:checked + .slider:before {
+            transform: translateX(30px);
+        }
+        .form-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+        }
+        .form-group label {
+            color: #555;
+            font-weight: 500;
+        }
+        .form-group input[type="number"] {
+            width: 100px;
+            padding: 8px 12px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+        }
+        .btn {
+            padding: 10px 20px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: 500;
+            transition: all 0.3s;
+        }
+        .btn-primary {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            color: white;
+        }
+        .btn-secondary {
+            background: #6c757d;
+            color: white;
+        }
+        .btn-danger {
+            background: #dc3545;
+            color: white;
+        }
+        .btn:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+        }
+        .stats {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #f8f9fa;
+            padding: 20px;
+            border-radius: 8px;
+            text-align: center;
+        }
+        .stat-card .value {
+            font-size: 32px;
+            font-weight: bold;
+            color: #f5576c;
+        }
+        .stat-card .label {
+            color: #666;
+            font-size: 14px;
+            margin-top: 5px;
+        }
+        .records {
+            background: #f8f9fa;
+            border-radius: 8px;
+            overflow: hidden;
+        }
+        .record-item {
+            background: white;
+            border-bottom: 1px solid #e0e0e0;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        .record-item:hover {
+            background: #f0f0f0;
+        }
+        .record-item:last-child {
+            border-bottom: none;
+        }
+        .record-summary {
+            padding: 15px 20px;
+            display: flex;
+            align-items: center;
+            gap: 15px;
+        }
+        .record-type {
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        .record-type.incoming {
+            background: #d4edda;
+            color: #155724;
+        }
+        .record-type.outgoing {
+            background: #cce5ff;
+            color: #004085;
+        }
+        .record-info {
+            flex: 1;
+        }
+        .record-info .method {
+            font-weight: 600;
+            color: #333;
+        }
+        .record-info .url {
+            color: #666;
+            font-size: 14px;
+        }
+        .record-info .timestamp {
+            color: #999;
+            font-size: 12px;
+        }
+        .record-status {
+            padding: 5px 12px;
+            border-radius: 15px;
+            font-size: 12px;
+            font-weight: 500;
+        }
+        .record-status.success {
+            background: #d4edda;
+            color: #155724;
+        }
+        .record-status.error {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .record-status.pending {
+            background: #fff3cd;
+            color: #856404;
+        }
+        .record-details {
+            display: none;
+            padding: 20px;
+            background: #fafafa;
+            border-top: 1px solid #e0e0e0;
+        }
+        .record-details.show {
+            display: block;
+        }
+        .detail-section {
+            margin-bottom: 20px;
+        }
+        .detail-section:last-child {
+            margin-bottom: 0;
+        }
+        .detail-section h4 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 14px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        .detail-section pre {
+            background: #2d2d2d;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 6px;
+            overflow-x: auto;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+        .detail-section code {
+            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+        }
+        .empty-state {
+            text-align: center;
+            padding: 60px 20px;
+            color: #999;
+        }
+        .empty-state svg {
+            width: 80px;
+            height: 80px;
+            margin-bottom: 20px;
+            opacity: 0.5;
+        }
+        .loading {
+            display: none;
+            text-align: center;
+            padding: 40px;
+            color: #666;
+        }
+        .loading::after {
+            content: '';
+            display: inline-block;
+            width: 20px;
+            height: 20px;
+            border: 2px solid #f5576c;
+            border-top-color: transparent;
+            border-radius: 50%;
+            animation: spin 0.6s linear infinite;
+            margin-left: 10px;
+            vertical-align: middle;
+        }
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        .status-badge {
+            display: inline-block;
+            padding: 3px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+        .status-badge.enabled {
+            background: #d4edda;
+            color: #155724;
+        }
+        .status-badge.disabled {
+            background: #f8d7da;
+            color: #721c24;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>🔍 Debug Console</h1>
+            <p>Monitor and debug HTTP requests and responses</p>
+        </div>
+
+        <div class="content">
+            <div class="controls">
+                <div class="toggle-switch">
+                    <label class="switch">
+                        <input type="checkbox" id="debugToggle" onchange="toggleDebug()">
+                        <span class="slider"></span>
+                    </label>
+                    <span>Debug Mode: <span id="debugStatus" class="status-badge disabled">Disabled</span></span>
+                </div>
+
+                <div class="form-group">
+                    <label for="maxRecords">Max Records:</label>
+                    <input type="number" id="maxRecords" min="1" max="1000" value="100" onchange="updateMaxRecords()">
+                </div>
+
+                <button class="btn btn-primary" onclick="refreshRecords()">🔄 Refresh</button>
+                <button class="btn btn-danger" onclick="clearRecords()">🗑️ Clear All</button>
+            </div>
+
+            <div class="stats">
+                <div class="stat-card">
+                    <div class="value" id="totalRecords">0</div>
+                    <div class="label">Total Records</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="incomingRecords">0</div>
+                    <div class="label">Incoming Requests</div>
+                </div>
+                <div class="stat-card">
+                    <div class="value" id="outgoingRecords">0</div>
+                    <div class="label">Outgoing Requests</div>
+                </div>
+            </div>
+
+            <div id="loading" class="loading">Loading...</div>
+            <div id="records" class="records"></div>
+        </div>
+    </div>
+
+    <script>
+        let autoRefreshInterval = null;
+
+        function showLoading(show) {
+            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        }
+
+        async function loadStatus() {
+            try {
+                const response = await fetch('/api/debug/status');
+                if (!response.ok) throw new Error('Failed to load debug status');
+                const status = await response.json();
+
+                document.getElementById('debugToggle').checked = status.enabled;
+                document.getElementById('maxRecords').value = status.maxRecords;
+                updateDebugStatus(status.enabled);
+
+                document.getElementById('totalRecords').textContent = status.recordCount;
+            } catch (error) {
+                console.error('Failed to load status:', error);
+            }
+        }
+
+        function updateDebugStatus(enabled) {
+            const statusEl = document.getElementById('debugStatus');
+            if (enabled) {
+                statusEl.textContent = 'Enabled';
+                statusEl.className = 'status-badge enabled';
+                startAutoRefresh();
+            } else {
+                statusEl.textContent = 'Disabled';
+                statusEl.className = 'status-badge disabled';
+                stopAutoRefresh();
+            }
+        }
+
+        async function toggleDebug() {
+            const enabled = document.getElementById('debugToggle').checked;
+            try {
+                const response = await fetch('/api/debug/toggle', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ enabled })
+                });
+                if (!response.ok) throw new Error('Failed to toggle debug');
+                updateDebugStatus(enabled);
+                if (enabled) {
+                    refreshRecords();
+                }
+            } catch (error) {
+                console.error('Failed to toggle debug:', error);
+                document.getElementById('debugToggle').checked = !enabled;
+            }
+        }
+
+        async function updateMaxRecords() {
+            const maxRecords = parseInt(document.getElementById('maxRecords').value);
+            try {
+                const response = await fetch('/api/debug/max-records', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ maxRecords })
+                });
+                if (!response.ok) throw new Error('Failed to update max records');
+            } catch (error) {
+                console.error('Failed to update max records:', error);
+            }
+        }
+
+        async function refreshRecords() {
+            showLoading(true);
+            try {
+                const response = await fetch('/api/debug/records');
+                if (!response.ok) throw new Error('Failed to load records');
+                const records = await response.json();
+                renderRecords(records);
+                await loadStatus();
+            } catch (error) {
+                console.error('Failed to load records:', error);
+            }
+            showLoading(false);
+        }
+
+        function renderRecords(records) {
+            const container = document.getElementById('records');
+            let incomingCount = 0;
+            let outgoingCount = 0;
+
+            if (records.length === 0) {
+                container.innerHTML = `
+                    <div class="empty-state">
+                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+                        </svg>
+                        <p>No records yet. Enable debug mode to start recording.</p>
+                    </div>
+                `;
+                return;
+            }
+
+            container.innerHTML = records.map(record => {
+                if (record.type === 'incoming') {
+                    incomingCount++;
+                } else {
+                    outgoingCount++;
+                }
+
+                const hasResponse = record.response.statusCode !== undefined;
+                const statusClass = record.error ? 'error' : (hasResponse ? 'success' : 'pending');
+                const statusText = record.error ? 'Error' : (hasResponse ? record.response.statusCode : 'Pending');
+
+                return `
+                    <div class="record-item" onclick="toggleDetails('${record.id}')">
+                        <div class="record-summary">
+                            <span class="record-type ${record.type}">${record.type}</span>
+                            <div class="record-info">
+                                <span class="method">${record.request.method}</span>
+                                <span class="url">${record.request.url}</span>
+                                <span class="timestamp">${formatTimestamp(record.timestamp)}</span>
+                            </div>
+                            <span class="record-status ${statusClass}">${statusText}</span>
+                        </div>
+                        <div id="details-${record.id}" class="record-details">
+                            ${record.error ? `<div class="detail-section"><h4>Error</h4><pre>${escapeHtml(record.error)}</pre></div>` : ''}
+                            <div class="detail-section">
+                                <h4>Request</h4>
+                                <pre><strong>Method:</strong> ${escapeHtml(record.request.method)}
+<strong>URL:</strong> ${escapeHtml(record.request.url)}
+<strong>Headers:</strong>
+${formatHeaders(record.request.headers)}
+<strong>Body:</strong>
+${escapeHtml(record.request.body || '(empty)')}</pre>
+                            </div>
+                            ${hasResponse ? `
+                            <div class="detail-section">
+                                <h4>Response</h4>
+                                <pre><strong>Status Code:</strong> ${record.response.statusCode}
+<strong>Headers:</strong>
+${formatHeaders(record.response.headers)}
+<strong>Body:</strong>
+${escapeHtml(record.response.body || '(empty)')}</pre>
+                            </div>
+                            ` : ''}
+                        </div>
+                    </div>
+                `;
+            }).join('');
+
+            document.getElementById('incomingRecords').textContent = incomingCount;
+            document.getElementById('outgoingRecords').textContent = outgoingCount;
+            document.getElementById('totalRecords').textContent = records.length;
+        }
+
+        function toggleDetails(id) {
+            const details = document.getElementById('details-' + id);
+            details.classList.toggle('show');
+        }
+
+        function formatTimestamp(timestamp) {
+            const date = new Date(timestamp);
+            return date.toLocaleString();
+        }
+
+        function formatHeaders(headers) {
+            if (!headers || Object.keys(headers).length === 0) {
+                return '(empty)';
+            }
+            return Object.entries(headers).map(([key, value]) => `  ${key}: ${value}`).join('\n');
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        async function clearRecords() {
+            if (!confirm('Are you sure you want to clear all debug records?')) {
+                return;
+            }
+            try {
+                const response = await fetch('/api/debug/records', { method: 'DELETE' });
+                if (!response.ok) throw new Error('Failed to clear records');
+                refreshRecords();
+            } catch (error) {
+                console.error('Failed to clear records:', error);
+            }
+        }
+
+        function startAutoRefresh() {
+            if (autoRefreshInterval) return;
+            autoRefreshInterval = setInterval(refreshRecords, 2000);
+        }
+
+        function stopAutoRefresh() {
+            if (autoRefreshInterval) {
+                clearInterval(autoRefreshInterval);
+                autoRefreshInterval = null;
+            }
+        }
+
+        // Initial load
+        loadStatus();
+        refreshRecords();
+    </script>
+</body>
+</html>

@@ -1,9 +1,11 @@
 package handlers
 
 import (
+	"bytes"
 	"encoding/json"
 	"fmt"
 	"immich_ml_proxy/config"
+	"immich_ml_proxy/debug"
 	"immich_ml_proxy/proxy"
 	"io"
 	"net/http"
@@ -138,12 +140,30 @@ func PredictHandler(c *gin.Context) {
 			// Forward request to backend
 			resp, err := proxy.ForwardPredictRequestWithType(backendURL, c.Request, string(entriesJSON))
 			if err != nil {
+				// Record error for debug
+				if debug.GetInstance().IsEnabled() {
+					recordID := debug.GenerateID()
+					debug.GetInstance().RecordOutgoingRequest(recordID, "POST", backendURL+"/predict", c.Request.Header, []byte(entriesJSON))
+					debug.GetInstance().RecordError(recordID, err)
+				}
+
 				resultMutex.Lock()
 				typeErrors[t] = err
 				resultMutex.Unlock()
 				return
 			}
 			defer resp.Body.Close()
+
+			// Record outgoing request and response for debug
+			if debug.GetInstance().IsEnabled() {
+				recordID := debug.GenerateID()
+				debug.GetInstance().RecordOutgoingRequest(recordID, "POST", backendURL+"/predict", c.Request.Header, []byte(entriesJSON))
+				body, _ := io.ReadAll(resp.Body)
+				resp.Body = io.NopCloser(bytes.NewReader(body))
+				debug.GetInstance().RecordOutgoingResponse(recordID, resp.StatusCode, resp.Header, body)
+				// Restore body for subsequent reads
+				resp.Body = io.NopCloser(bytes.NewReader(body))
+			}
 
 			// Read response
 			body, err := io.ReadAll(resp.Body)

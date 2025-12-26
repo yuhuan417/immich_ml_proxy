@@ -23,6 +23,14 @@ func ForwardRequest(backendURL string, method string, path string, header http.H
 	}
 
 	targetURL := backendURL + path
+
+	// Read body for debug recording
+	var bodyBytes []byte
+	if body != nil {
+		bodyBytes, _ = io.ReadAll(body)
+		body = io.NopCloser(bytes.NewReader(bodyBytes))
+	}
+
 	req, err := http.NewRequest(method, targetURL, body)
 	if err != nil {
 		return nil, err
