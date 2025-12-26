@@ -169,6 +169,25 @@ func BuildEntriesForType(entries []Entry) (map[string]interface{}, error) {
 	return result, nil
 }
 
+// BuildEntriesForTask builds the entries JSON structure for a specific task
+func BuildEntriesForTask(entries []Entry) (map[string]interface{}, error) {
+	// All entries should have the same task
+	if len(entries) == 0 {
+		return nil, fmt.Errorf("no entries provided")
+	}
+
+	task := entries[0].Task
+	result := make(map[string]interface{})
+	result[task] = make(map[string]interface{})
+
+	taskTypes := result[task].(map[string]interface{})
+	for _, entry := range entries {
+		taskTypes[entry.Type] = entry.EntryData
+	}
+
+	return result, nil
+}
+
 // GetBackendURLForType determines the backend URL for a specific type
 // It checks if any entry of this type has a task with specific routing
 func GetBackendURLForType(entries []Entry, getBackendURL func(task string) string) string {
@@ -244,7 +263,8 @@ func ForwardPredictRequest(backendURL string, r *http.Request) (*http.Response, 
 }
 
 // ForwardPredictRequestWithType forwards the predict request with custom entries JSON
-func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJSON string) (*http.Response, error) {
+// Returns response and the actual request body bytes for debug purposes
+func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJSON string) (*http.Response, []byte, error) {
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -257,45 +277,53 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 
 	// Write custom entries
 	if err := writer.WriteField("entries", entriesJSON); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Parse original multipart form to get files
 	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	// Copy form files (image, text, etc.)
+	// Copy all form files (image, text, etc.)
 	for key, files := range r.MultipartForm.File {
 		for _, fileHeader := range files {
 			file, err := fileHeader.Open()
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			defer file.Close()
 
 			part, err := writer.CreateFormFile(key, fileHeader.Filename)
 			if err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 			if _, err := io.Copy(part, file); err != nil {
-				return nil, err
+				return nil, nil, err
 			}
 		}
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
-	req, err := http.NewRequest("POST", targetURL, body)
+	// Get body bytes for debug before sending
+	bodyBytes := body.Bytes()
+
+	req, err := http.NewRequest("POST", targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	// Copy headers
 	req.Header = r.Header.Clone()
 	req.Header.Set("Content-Type", writer.FormDataContentType())
 
-	return client.Do(req)
+	resp, err := client.Do(req)
+	if err != nil {
+		return nil, bodyBytes, err
+	}
+
+	return resp, bodyBytes, nil
 }

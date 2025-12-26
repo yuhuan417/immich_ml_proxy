@@ -94,61 +94,62 @@ func PredictHandler(c *gin.Context) {
 		return
 	}
 
-	// Group entries by type
-	groupedByType := proxy.GroupEntriesByType(entries)
+// Group entries by task (not by type)
+	groupedByTask := make(map[string][]proxy.Entry)
+	for _, entry := range entries {
+		groupedByTask[entry.Task] = append(groupedByTask[entry.Task], entry)
+	}
 
-	// For each type, build entries and forward to backend
-	typeResults := make(map[string]interface{})
-	typeErrors := make(map[string]error)
+	// For each task, build entries and forward to backend
+	taskResults := make(map[string]interface{})
+	taskErrors := make(map[string]error)
 	var resultMutex sync.Mutex
 	var wg sync.WaitGroup
 
-	for typeKey, typeEntries := range groupedByType {
+	for taskKey, taskEntries := range groupedByTask {
 		wg.Add(1)
-		go func(t string, te []proxy.Entry) {
+		go func(task string, te []proxy.Entry) {
 			defer wg.Done()
 
-			// Build entries for this type
-			entriesForType, err := proxy.BuildEntriesForType(te)
+			// Build entries for this task
+			entriesForTask, err := proxy.BuildEntriesForTask(te)
 			if err != nil {
 				resultMutex.Lock()
-				typeErrors[t] = err
+				taskErrors[task] = err
 				resultMutex.Unlock()
 				return
 			}
 
-			// Get backend URL for this type
-			backendURL := proxy.GetBackendURLForType(te, func(task string) string {
-				return cfg.GetBackendURL(task)
-			})
+			// Get backend URL for this task
+			backendURL := cfg.GetBackendURL(task)
 			if backendURL == "" {
 				resultMutex.Lock()
-				typeErrors[t] = fmt.Errorf("no backend configured for type: %s", t)
+				taskErrors[task] = fmt.Errorf("no backend configured for task: %s", task)
 				resultMutex.Unlock()
 				return
 			}
 
-			// Create request with entries for this type
-			entriesJSON, err := json.Marshal(entriesForType)
+			// Create request with entries for this task
+			entriesJSON, err := json.Marshal(entriesForTask)
 			if err != nil {
 				resultMutex.Lock()
-				typeErrors[t] = err
+				taskErrors[task] = err
 				resultMutex.Unlock()
 				return
 			}
 
 			// Forward request to backend
-			resp, err := proxy.ForwardPredictRequestWithType(backendURL, c.Request, string(entriesJSON))
+			resp, bodyBytes, err := proxy.ForwardPredictRequestWithType(backendURL, c.Request, string(entriesJSON))
 			if err != nil {
 				// Record error for debug
 				if debug.GetInstance().IsEnabled() {
 					recordID := debug.GenerateID()
-					debug.GetInstance().RecordOutgoingRequest(recordID, "POST", backendURL+"/predict", c.Request.Header, []byte(entriesJSON))
+					debug.GetInstance().RecordOutgoingRequest(recordID, "POST", backendURL+"/predict", c.Request.Header, bodyBytes)
 					debug.GetInstance().RecordError(recordID, err)
 				}
 
 				resultMutex.Lock()
-				typeErrors[t] = err
+				taskErrors[task] = err
 				resultMutex.Unlock()
 				return
 			}
@@ -157,7 +158,7 @@ func PredictHandler(c *gin.Context) {
 			// Record outgoing request and response for debug
 			if debug.GetInstance().IsEnabled() {
 				recordID := debug.GenerateID()
-				debug.GetInstance().RecordOutgoingRequest(recordID, "POST", backendURL+"/predict", c.Request.Header, []byte(entriesJSON))
+				debug.GetInstance().RecordOutgoingRequest(recordID, "POST", backendURL+"/predict", c.Request.Header, bodyBytes)
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body = io.NopCloser(bytes.NewReader(body))
 				debug.GetInstance().RecordOutgoingResponse(recordID, resp.StatusCode, resp.Header, body)
@@ -169,14 +170,14 @@ func PredictHandler(c *gin.Context) {
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				resultMutex.Lock()
-				typeErrors[t] = err
+				taskErrors[task] = err
 				resultMutex.Unlock()
 				return
 			}
 
 			if resp.StatusCode != http.StatusOK {
 				resultMutex.Lock()
-				typeErrors[t] = fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+				taskErrors[task] = fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
 				resultMutex.Unlock()
 				return
 			}
@@ -185,27 +186,27 @@ func PredictHandler(c *gin.Context) {
 			var result map[string]interface{}
 			if err := json.Unmarshal(body, &result); err != nil {
 				resultMutex.Lock()
-				typeErrors[t] = err
+				taskErrors[task] = err
 				resultMutex.Unlock()
 				return
 			}
 
 			resultMutex.Lock()
-			typeResults[t] = result
+			taskResults[task] = result
 			resultMutex.Unlock()
-		}(typeKey, typeEntries)
+		}(taskKey, taskEntries)
 	}
 
 	wg.Wait()
 
 	// Check for errors
-	if len(typeErrors) > 0 {
+	if len(taskErrors) > 0 {
 		var errMsgs []string
-		for t, err := range typeErrors {
-			errMsgs = append(errMsgs, fmt.Sprintf("type %s: %v", t, err))
+		for t, err := range taskErrors {
+			errMsgs = append(errMsgs, fmt.Sprintf("task %s: %v", t, err))
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error": "Failed to process some types",
+			"error": "Failed to process some tasks",
 			"errors": errMsgs,
 		})
 		return
@@ -214,15 +215,13 @@ func PredictHandler(c *gin.Context) {
 	// Assemble results in original order
 	finalResult := make(map[string]interface{})
 	for _, entry := range entries {
-		if finalResult[entry.Task] == nil {
-			finalResult[entry.Task] = make(map[string]interface{})
-		}
-		taskResult := finalResult[entry.Task].(map[string]interface{})
-
-		// Extract result for this type
-		typeResult := typeResults[entry.Type].(map[string]interface{})
-		if taskResult[entry.Type] == nil {
-			taskResult[entry.Type] = typeResult[entry.Type]
+		taskResult, exists := taskResults[entry.Task]
+		if exists {
+			// taskResult is already in the format {"taskName": {...}}
+			// Merge it directly into finalResult
+			for key, value := range taskResult.(map[string]interface{}) {
+				finalResult[key] = value
+			}
 		}
 	}
 

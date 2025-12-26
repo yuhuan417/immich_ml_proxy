@@ -358,6 +358,7 @@
 
     <script>
         let autoRefreshInterval = null;
+        let expandedRecords = new Set();
 
         function showLoading(show) {
             document.getElementById('loading').style.display = show ? 'block' : 'none';
@@ -467,6 +468,10 @@
                 const statusClass = record.error ? 'error' : (hasResponse ? 'success' : 'pending');
                 const statusText = record.error ? 'Error' : (hasResponse ? record.response.statusCode : 'Pending');
 
+                const requestContentType = record.request.headers['Content-Type'] || '';
+                const responseContentType = record.response.headers ? (record.response.headers['Content-Type'] || '') : '';
+
+                const isExpanded = expandedRecords.has(record.id);
                 return `
                     <div class="record-item" onclick="toggleDetails('${record.id}')">
                         <div class="record-summary">
@@ -478,25 +483,25 @@
                             </div>
                             <span class="record-status ${statusClass}">${statusText}</span>
                         </div>
-                        <div id="details-${record.id}" class="record-details">
+                        <div id="details-${record.id}" class="record-details ${isExpanded ? 'show' : ''}">
                             ${record.error ? `<div class="detail-section"><h4>Error</h4><pre>${escapeHtml(record.error)}</pre></div>` : ''}
                             <div class="detail-section">
-                                <h4>Request</h4>
-                                <pre><strong>Method:</strong> ${escapeHtml(record.request.method)}
+                                <h4>Request <button class="btn btn-secondary" style="font-size: 12px; padding: 5px 10px; margin-left: 10px;" onclick="copyRequest('${record.id}', event)">📋 Copy</button></h4>
+                                <pre id="request-body-${record.id}"><strong>Method:</strong> ${escapeHtml(record.request.method)}
 <strong>URL:</strong> ${escapeHtml(record.request.url)}
 <strong>Headers:</strong>
 ${formatHeaders(record.request.headers)}
 <strong>Body:</strong>
-${escapeHtml(record.request.body || '(empty)')}</pre>
+${escapeHtml(formatBody(record.request.body, requestContentType))}</pre>
                             </div>
                             ${hasResponse ? `
                             <div class="detail-section">
-                                <h4>Response</h4>
-                                <pre><strong>Status Code:</strong> ${record.response.statusCode}
+                                <h4>Response <button class="btn btn-secondary" style="font-size: 12px; padding: 5px 10px; margin-left: 10px;" onclick="copyResponse('${record.id}', event)">📋 Copy</button></h4>
+                                <pre id="response-body-${record.id}"><strong>Status Code:</strong> ${record.response.statusCode}
 <strong>Headers:</strong>
 ${formatHeaders(record.response.headers)}
 <strong>Body:</strong>
-${escapeHtml(record.response.body || '(empty)')}</pre>
+${escapeHtml(formatBody(record.response.body, responseContentType))}</pre>
                             </div>
                             ` : ''}
                         </div>
@@ -511,7 +516,13 @@ ${escapeHtml(record.response.body || '(empty)')}</pre>
 
         function toggleDetails(id) {
             const details = document.getElementById('details-' + id);
-            details.classList.toggle('show');
+            if (expandedRecords.has(id)) {
+                expandedRecords.delete(id);
+                details.classList.remove('show');
+            } else {
+                expandedRecords.add(id);
+                details.classList.add('show');
+            }
         }
 
         function formatTimestamp(timestamp) {
@@ -530,6 +541,146 @@ ${escapeHtml(record.response.body || '(empty)')}</pre>
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
+        }
+
+        function formatBody(body, contentType) {
+            if (!body) {
+                return '(empty)';
+            }
+
+            // Check if body is binary content (image, video, etc.)
+            if (contentType && (contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('audio/'))) {
+                return `[Binary content - ${contentType}, size: ${body.length} bytes]`;
+            }
+
+            // Check if body is too large (> 10KB)
+            if (body.length > 10240) {
+                // Try to parse as multipart form data to show entries
+                if (contentType && contentType.includes('multipart/form-data')) {
+                    return formatMultipartBody(body);
+                }
+                return `[Large content - size: ${body.length} bytes, truncated for display]`;
+            }
+
+            // Check if body contains non-printable characters (likely binary)
+            const printableChars = body.replace(/[\x20-\x7E\n\r\t]/g, '').length;
+            if (printableChars > body.length * 0.3) {
+                return `[Binary data - size: ${body.length} bytes]`;
+            }
+
+            return body;
+        }
+
+        function formatMultipartBody(body) {
+            try {
+                // Try to find boundary from the first line of body
+                const firstLineMatch = body.match(/^--([^\r\n]+)/);
+                let boundary = null;
+
+                if (firstLineMatch) {
+                    boundary = firstLineMatch[1];
+                } else {
+                    // Fallback: try to find boundary in Content-Type header
+                    const boundaryMatch = body.match(/boundary="?([^";\s]+)"?/i);
+                    if (boundaryMatch) {
+                        boundary = boundaryMatch[1];
+                    }
+                }
+
+                if (!boundary) {
+                    console.log('No boundary found in body, first 500 chars:', body.substring(0, 500));
+                    return `[Large multipart content - size: ${body.length} bytes, no boundary found]`;
+                }
+
+                console.log('Found boundary:', boundary);
+                const parts = body.split('--' + boundary);
+                console.log('Number of parts:', parts.length);
+
+                let result = '';
+
+                for (let i = 0; i < parts.length; i++) {
+                    const part = parts[i];
+
+                    if (!part.trim() || part.trim() === '--') {
+                        continue;
+                    }
+
+                    const nameMatch = part.match(/name="?([^";]+)"?/i);
+                    const name = nameMatch ? nameMatch[1] : 'unknown';
+
+                    // Check if it's an image (by Content-Type or filename)
+                    if (part.includes('Content-Type: image/') || part.includes('Content-Type:image/') ||
+                        part.includes('filename="') || part.includes("filename='")) {
+                        const partSize = part.length;
+                        result += `${name}: [Image, size: ${partSize} bytes]\n\n`;
+                    } else {
+                        // Extract content for non-image fields
+                        const headerEndMatch = part.match(/\r?\n\r?\n/);
+                        if (headerEndMatch) {
+                            const headerEndIndex = headerEndMatch.index + headerEndMatch[0].length;
+                            let content = part.substring(headerEndIndex).trim();
+
+                            // Remove trailing boundary markers
+                            content = content.replace(/\r?\n--\r?\n?$/, '');
+
+                            // Try to format as JSON if possible
+                            try {
+                                const parsed = JSON.parse(content);
+                                content = JSON.stringify(parsed, null, 2);
+                            } catch (e) {
+                                // Not JSON, keep as is
+                            }
+
+                            result += `${name}:\n${content}\n\n`;
+                        }
+                    }
+                }
+
+                return result.trim() || `[No valid parts found in multipart]`;
+            } catch (e) {
+                console.error('Multipart parsing error:', e);
+                return `[Large content - size: ${body.length} bytes, parsing error: ${e.message}]`;
+            }
+        }
+
+        function copyResponse(recordId, event) {
+            event.stopPropagation();
+            const preElement = document.getElementById('response-body-' + recordId);
+            const text = preElement.textContent;
+
+            navigator.clipboard.writeText(text).then(() => {
+                const button = event.target;
+                const originalText = button.textContent;
+                button.textContent = '✓ Copied!';
+                button.style.background = '#28a745';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = '';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard');
+            });
+        }
+
+        function copyRequest(recordId, event) {
+            event.stopPropagation();
+            const preElement = document.getElementById('request-body-' + recordId);
+            const text = preElement.textContent;
+
+            navigator.clipboard.writeText(text).then(() => {
+                const button = event.target;
+                const originalText = button.textContent;
+                button.textContent = '✓ Copied!';
+                button.style.background = '#28a745';
+                setTimeout(() => {
+                    button.textContent = originalText;
+                    button.style.background = '';
+                }, 2000);
+            }).catch(err => {
+                console.error('Failed to copy:', err);
+                alert('Failed to copy to clipboard');
+            });
         }
 
         async function clearRecords() {

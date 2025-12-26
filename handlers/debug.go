@@ -108,6 +108,7 @@ func DebugMiddleware() gin.HandlerFunc {
 			ResponseWriter: c.Writer,
 			recordID:       recordID,
 			dm:             dm,
+			status:         200, // Default status
 		}
 		c.Writer = writer
 
