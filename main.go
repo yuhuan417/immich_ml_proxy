@@ -40,6 +40,7 @@ func main() {
 	r.GET("/config", handlers.ConfigGetHandler)
 	r.GET("/api/config", handlers.ConfigAPIGetHandler)
 	r.POST("/api/config", handlers.ConfigPostHandler)
+	r.GET("/api/health", handlers.HealthAPIGetHandler)
 
 	// Debug routes
 	r.GET("/debug", handlers.DebugPageHandler)

@@ -171,6 +171,45 @@
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
+        .health-status {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-size: 12px;
+            font-weight: 500;
+            min-width: 80px;
+            justify-content: center;
+        }
+        .health-status.healthy {
+            background: #d4edda;
+            color: #155724;
+        }
+        .health-status.unhealthy {
+            background: #f8d7da;
+            color: #721c24;
+        }
+        .health-status.unknown {
+            background: #e2e3e5;
+            color: #383d41;
+        }
+        .health-status::before {
+            content: '';
+            display: inline-block;
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            margin-right: 6px;
+        }
+        .health-status.healthy::before {
+            background: #28a745;
+        }
+        .health-status.unhealthy::before {
+            background: #dc3545;
+        }
+        .health-status.unknown::before {
+            background: #6c757d;
+        }
     </style>
 </head>
 <body>
@@ -308,6 +347,7 @@
                 div.innerHTML = `
                     <input type="text" value="${backend.name}" onchange="updateBackend(${index}, 'name', this.value)" placeholder="Name">
                     <input type="text" value="${backend.url}" onchange="updateBackend(${index}, 'url', this.value)" placeholder="URL">
+                    <span id="health-${backend.name}" class="health-status unknown">Unknown</span>
                     <button class="btn btn-danger" onclick="removeBackend(${index})">Remove</button>
                 `;
                 backendList.appendChild(div);
@@ -416,6 +456,33 @@
 
         // Load config on page load
         loadConfig();
+
+        // Periodically refresh health status
+        async function refreshHealthStatus() {
+            try {
+                const response = await fetch('/api/health');
+                if (!response.ok) return;
+                const healthData = await response.json();
+
+                // Update health status display for each backend
+                Object.entries(healthData).forEach(([backendName, health]) => {
+                    const healthElement = document.getElementById(`health-${backendName}`);
+                    if (healthElement) {
+                        healthElement.className = `health-status ${health.status}`;
+                        healthElement.textContent = health.status.charAt(0).toUpperCase() + health.status.slice(1);
+                        if (health.error) {
+                            healthElement.title = health.error;
+                        }
+                    }
+                });
+            } catch (error) {
+                console.error('Failed to refresh health status:', error);
+            }
+        }
+
+        // Refresh health status every 5 seconds
+        setInterval(refreshHealthStatus, 5000);
+        refreshHealthStatus();
     </script>
 </body>
 </html>

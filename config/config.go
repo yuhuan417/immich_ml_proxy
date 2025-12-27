@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"sync"
+	"time"
 )
 
 type Backend struct {
@@ -11,10 +12,25 @@ type Backend struct {
 	URL  string `json:"url"`
 }
 
+type HealthStatus string
+
+const (
+	HealthStatusHealthy   HealthStatus = "healthy"
+	HealthStatusUnhealthy HealthStatus = "unhealthy"
+	HealthStatusUnknown   HealthStatus = "unknown"
+)
+
+type BackendHealth struct {
+	Status    HealthStatus `json:"status"`
+	LastCheck int64        `json:"lastCheck"` // Unix timestamp
+	Error     string       `json:"error,omitempty"`
+}
+
 type Config struct {
 		DefaultBackend string            `json:"defaultBackend"`
 		Backends       []Backend         `json:"backends"`
 		TaskRouting    map[string]string `json:"taskRouting"` // task -> backend name mapping
+		Health         map[string]BackendHealth `json:"-"` // backend name -> health status
 		mu             sync.RWMutex
 	}
 var (
@@ -29,6 +45,7 @@ func Load() *Config {
 			DefaultBackend: "",
 			Backends:       []Backend{},
 			TaskRouting:    make(map[string]string),
+			Health:         make(map[string]BackendHealth),
 		}
 		instance.loadFromFile()
 	})
@@ -153,4 +170,120 @@ func (c *Config) ToJSON() ([]byte, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 	return json.MarshalIndent(c, "", "  ")
+}
+
+// SetHealthStatus sets the health status for a backend
+func (c *Config) SetHealthStatus(backendName string, status HealthStatus, error string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.Health[backendName] = BackendHealth{
+		Status:    status,
+		LastCheck: time.Now().Unix(),
+		Error:     error,
+	}
+}
+
+// GetHealthStatus gets the health status for a backend
+func (c *Config) GetHealthStatus(backendName string) BackendHealth {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	if health, ok := c.Health[backendName]; ok {
+		return health
+	}
+	return BackendHealth{
+		Status:    HealthStatusUnknown,
+		LastCheck: 0,
+	}
+}
+
+// GetAllHealthStatus returns health status for all backends
+func (c *Config) GetAllHealthStatus() map[string]BackendHealth {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	result := make(map[string]BackendHealth)
+	for k, v := range c.Health {
+		result[k] = v
+	}
+	return result
+}
+
+// GetBackendsByType returns backends that handle the specified type
+func (c *Config) GetBackendsByType(typeName string) []Backend {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Check if this type has a specific routing in taskRouting
+	backendName, hasRouting := c.TaskRouting[typeName]
+
+	if hasRouting {
+		// Return the specific backend for this type
+		for _, backend := range c.Backends {
+			if backend.Name == backendName {
+				return []Backend{backend}
+			}
+		}
+	}
+
+	// No specific routing, return empty (type not supported)
+	return []Backend{}
+}
+
+// GetHealthyBackendsByType returns healthy backends that handle the specified type
+func (c *Config) GetHealthyBackendsByType(typeName string) []Backend {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	// Check if this type has a specific routing in taskRouting
+	backendName, hasRouting := c.TaskRouting[typeName]
+
+	if hasRouting {
+		// Check if the specific backend is healthy
+		for _, backend := range c.Backends {
+			if backend.Name == backendName {
+				if health, ok := c.Health[backend.Name]; ok && health.Status == HealthStatusHealthy {
+					return []Backend{backend}
+				}
+				// Backend exists but is not healthy
+				return []Backend{}
+			}
+		}
+	}
+
+	// No specific routing or backend not found
+	return []Backend{}
+}
+
+// GetAllTypes returns all unique types from taskRouting
+// Note: This doesn't include types handled by defaultBackend, as those are unknown
+func (c *Config) GetAllTypes() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	typeMap := make(map[string]bool)
+	for task := range c.TaskRouting {
+		typeMap[task] = true
+	}
+
+	var result []string
+	for t := range typeMap {
+		result = append(result, t)
+	}
+	return result
+}
+
+// GetDefaultBackend returns the default backend
+func (c *Config) GetDefaultBackend() *Backend {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if c.DefaultBackend == "" {
+		return nil
+	}
+
+	for _, backend := range c.Backends {
+		if backend.Name == c.DefaultBackend {
+			return &backend
+		}
+	}
+	return nil
 }

@@ -7,6 +7,7 @@ import (
 	"io"
 	"mime/multipart"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -15,6 +16,51 @@ type BackendStatus struct {
 	Status string `json:"status"` // "healthy" or "unhealthy"
 	Error  string `json:"error,omitempty"`
 }
+
+// RoundRobinBalancer implements round-robin load balancing
+type RoundRobinBalancer struct {
+	mu        sync.Mutex
+	roundRobinIndex map[string]int // type -> current index
+}
+
+// NewRoundRobinBalancer creates a new round-robin balancer
+func NewRoundRobinBalancer() *RoundRobinBalancer {
+	return &RoundRobinBalancer{
+		roundRobinIndex: make(map[string]int),
+	}
+}
+
+// GetNextBackend returns the next backend using round-robin for the given type
+func (b *RoundRobinBalancer) GetNextBackend(typeName string, backends []string) string {
+	if len(backends) == 0 {
+		return ""
+	}
+
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	// Get or initialize index for this type
+	index, ok := b.roundRobinIndex[typeName]
+	if !ok {
+		index = 0
+	}
+
+	// Select backend
+	backend := backends[index]
+
+	// Update index for next time
+	b.roundRobinIndex[typeName] = (index + 1) % len(backends)
+
+	return backend
+}
+
+// GetNextBackend returns the next backend using global round-robin balancer
+func GetNextBackend(typeName string, backends []string) string {
+	return globalBalancer.GetNextBackend(typeName, backends)
+}
+
+// Global round-robin balancer instance
+var globalBalancer = NewRoundRobinBalancer()
 
 // ForwardRequest forwards the HTTP request to the specified backend server
 func ForwardRequest(backendURL string, method string, path string, header http.Header, body io.Reader) (*http.Response, error) {
