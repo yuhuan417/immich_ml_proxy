@@ -285,7 +285,19 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 		return nil, nil, err
 	}
 
-	// Copy all form files (image, text, etc.)
+	// Copy all form values (text fields, excluding entries which is already written)
+	for key, values := range r.MultipartForm.Value {
+		if key == "entries" {
+			continue // Skip entries as it's already written above
+		}
+		for _, value := range values {
+			if err := writer.WriteField(key, value); err != nil {
+				return nil, nil, err
+			}
+		}
+	}
+
+	// Copy all form files (image, etc.)
 	for key, files := range r.MultipartForm.File {
 		for _, fileHeader := range files {
 			file, err := fileHeader.Open()
