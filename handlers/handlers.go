@@ -22,7 +22,7 @@ func Init(c *config.Config) {
 
 // RootHandler handles GET / - returns static service information
 func RootHandler(c *gin.Context) {
-	c.HTML(http.StatusOK, "", `
+	c.Data(http.StatusOK, "text/html; charset=utf-8", []byte(`
 <!DOCTYPE html>
 <html>
 <head>
@@ -39,7 +39,7 @@ func RootHandler(c *gin.Context) {
 	<h1>Immich ML Proxy</h1>
 	<p><a href="/config">Config</a><a href="/debug">Debug</a></p>
 </body>
-</html>`)
+</html>`))
 }
 
 // PingHandler handles GET /ping - checks health status of all backends and returns "pong" if all are healthy
