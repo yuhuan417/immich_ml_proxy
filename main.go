@@ -50,8 +50,8 @@ func main() {
 	r.DELETE("/api/debug/records", handlers.DebugClearRecordsHandler)
 
 	// Start server
-	log.Println("Starting Immich ML Proxy on :8080")
-	if err := r.Run(":8080"); err != nil {
+	log.Println("Starting Immich ML Proxy on :3004")
+	if err := r.Run(":3004"); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
 }
