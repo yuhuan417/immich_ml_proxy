@@ -22,9 +22,24 @@ func Init(c *config.Config) {
 
 // RootHandler handles GET / - returns static service information
 func RootHandler(c *gin.Context) {
-	c.JSON(http.StatusOK, gin.H{
-		"message": "Immich ML",
-	})
+	c.HTML(http.StatusOK, "", `
+<!DOCTYPE html>
+<html>
+<head>
+	<meta charset="utf-8">
+	<title>Immich ML Proxy</title>
+	<style>
+		body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; margin: 40px; }
+		h1 { color: #333; }
+		a { color: #f5576c; text-decoration: none; margin-right: 20px; }
+		a:hover { text-decoration: underline; }
+	</style>
+</head>
+<body>
+	<h1>Immich ML Proxy</h1>
+	<p><a href="/config">Config</a><a href="/debug">Debug</a></p>
+</body>
+</html>`)
 }
 
 // PingHandler handles GET /ping - checks health status of all backends and returns "pong" if all are healthy
