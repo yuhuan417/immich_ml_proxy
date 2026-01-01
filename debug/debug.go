@@ -2,6 +2,7 @@ package debug
 
 import (
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -33,11 +34,10 @@ type ResponseInfo struct {
 
 // DebugManager manages debug records and settings
 type DebugManager struct {
-	enabled      bool
-	maxRecords   int
-	records      []HTTPRecord
-	recordMap    map[string]int // id -> index in records slice
-	mu           sync.RWMutex
+	enabled    bool
+	maxRecords int
+	records    map[string]HTTPRecord // id -> record
+	mu         sync.RWMutex
 }
 
 var (
@@ -51,8 +51,7 @@ func GetInstance() *DebugManager {
 		instance = &DebugManager{
 			enabled:    false,
 			maxRecords: 100,
-			records:    make([]HTTPRecord, 0),
-			recordMap:  make(map[string]int),
+			records:    make(map[string]HTTPRecord),
 		}
 	})
 	return instance
@@ -127,7 +126,7 @@ func (dm *DebugManager) RecordIncomingResponse(id string, statusCode int, header
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	idx, exists := dm.recordMap[id]
+	record, exists := dm.records[id]
 	if !exists {
 		return
 	}
@@ -139,11 +138,13 @@ func (dm *DebugManager) RecordIncomingResponse(id string, statusCode int, header
 		}
 	}
 
-	dm.records[idx].Response = ResponseInfo{
+	record.Response = ResponseInfo{
 		StatusCode: statusCode,
 		Headers:    headerMap,
 		Body:       string(body),
 	}
+
+	dm.records[id] = record
 }
 
 // RecordOutgoingRequest records an outgoing request to backend
@@ -186,7 +187,7 @@ func (dm *DebugManager) RecordOutgoingResponse(id string, statusCode int, header
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	idx, exists := dm.recordMap[id]
+	record, exists := dm.records[id]
 	if !exists {
 		return
 	}
@@ -198,11 +199,13 @@ func (dm *DebugManager) RecordOutgoingResponse(id string, statusCode int, header
 		}
 	}
 
-	dm.records[idx].Response = ResponseInfo{
+	record.Response = ResponseInfo{
 		StatusCode: statusCode,
 		Headers:    headerMap,
 		Body:       string(body),
 	}
+
+	dm.records[id] = record
 }
 
 // RecordError records an error
@@ -214,21 +217,31 @@ func (dm *DebugManager) RecordError(id string, err error) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	idx, exists := dm.recordMap[id]
+	record, exists := dm.records[id]
 	if !exists {
 		return
 	}
 
-	dm.records[idx].Error = err.Error()
+	record.Error = err.Error()
+	dm.records[id] = record
 }
 
-// GetRecords returns all records
+// GetRecords returns all records sorted by timestamp
 func (dm *DebugManager) GetRecords() []HTTPRecord {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
-	result := make([]HTTPRecord, len(dm.records))
-	copy(result, dm.records)
+	// Convert map to slice
+	result := make([]HTTPRecord, 0, len(dm.records))
+	for _, record := range dm.records {
+		result = append(result, record)
+	}
+
+	// Sort by timestamp
+	sort.Slice(result, func(i, j int) bool {
+		return result[i].Timestamp.Before(result[j].Timestamp)
+	})
+
 	return result
 }
 
@@ -237,12 +250,8 @@ func (dm *DebugManager) GetRecord(id string) (HTTPRecord, bool) {
 	dm.mu.RLock()
 	defer dm.mu.RUnlock()
 
-	idx, exists := dm.recordMap[id]
-	if !exists {
-		return HTTPRecord{}, false
-	}
-
-	return dm.records[idx], true
+	record, exists := dm.records[id]
+	return record, exists
 }
 
 // ClearRecords clears all records
@@ -250,8 +259,7 @@ func (dm *DebugManager) ClearRecords() {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	dm.records = make([]HTTPRecord, 0)
-	dm.recordMap = make(map[string]int)
+	dm.records = make(map[string]HTTPRecord)
 }
 
 // GetStatus returns the current debug status
@@ -260,25 +268,41 @@ func (dm *DebugManager) GetStatus() map[string]interface{} {
 	defer dm.mu.RUnlock()
 
 	return map[string]interface{}{
-		"enabled":    dm.enabled,
-		"maxRecords": dm.maxRecords,
+		"enabled":     dm.enabled,
+		"maxRecords":  dm.maxRecords,
 		"recordCount": len(dm.records),
 	}
 }
 
 // addRecord adds a record and trims if necessary
 func (dm *DebugManager) addRecord(record HTTPRecord) {
-	dm.recordMap[record.ID] = len(dm.records)
-	dm.records = append(dm.records, record)
+	dm.records[record.ID] = record
 	dm.trimRecords()
 }
 
 // trimRecords removes oldest records if exceeding max
 func (dm *DebugManager) trimRecords() {
+	if len(dm.records) <= dm.maxRecords {
+		return
+	}
+
+	// Find and remove oldest records
 	for len(dm.records) > dm.maxRecords {
-		oldestID := dm.records[0].ID
-		delete(dm.recordMap, oldestID)
-		dm.records = dm.records[1:]
+		var oldestID string
+		var oldestTime time.Time
+
+		// Find the oldest record
+		for id, record := range dm.records {
+			if oldestID == "" || record.Timestamp.Before(oldestTime) {
+				oldestID = id
+				oldestTime = record.Timestamp
+			}
+		}
+
+		// Delete the oldest record
+		if oldestID != "" {
+			delete(dm.records, oldestID)
+		}
 	}
 }
 
