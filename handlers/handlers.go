@@ -157,59 +157,74 @@ func PredictHandler(c *gin.Context) {
 				return
 			}
 
-			// Get healthy backends for this type
-			healthyBackends := cfg.GetHealthyBackendsByType(t)
-
-			// Get all backends for this type
-			allBackends := cfg.GetBackendsByType(t)
-
-			// Fallback to default backend if no type-specific backends
+			// Check if this is a clip task with modelType routing
 			var selectedBackend *config.Backend
-			if len(allBackends) == 0 {
-				// No type-specific backends, use default backend
-				if cfg.DefaultBackend != "" {
-					for _, b := range cfg.Backends {
-						if b.Name == cfg.DefaultBackend {
+			for _, entry := range te {
+				if entry.Task == "clip" {
+					// For clip task, try to route by modelType (textual/visual)
+					backend := cfg.GetBackendByModelType(entry.Type)
+					if backend != nil {
+						selectedBackend = backend
+						break
+					}
+				}
+			}
+
+			// If no modelType-specific backend found, fall back to task type routing
+			if selectedBackend == nil {
+				// Get healthy backends for this type
+				healthyBackends := cfg.GetHealthyBackendsByType(t)
+
+				// Get all backends for this type
+				allBackends := cfg.GetBackendsByType(t)
+
+				// Fallback to default backend if no type-specific backends
+				if len(allBackends) == 0 {
+					// No type-specific backends, use default backend
+					if cfg.DefaultBackend != "" {
+						for _, b := range cfg.Backends {
+							if b.Name == cfg.DefaultBackend {
+								selectedBackend = &b
+								break
+							}
+						}
+					}
+					if selectedBackend == nil {
+						resultMutex.Lock()
+						typeErrors[t] = fmt.Errorf("no backend available for type: %s", t)
+						resultMutex.Unlock()
+						return
+					}
+				} else {
+					// Use round-robin to select backend
+					var backendList []string
+					if len(healthyBackends) > 0 {
+						// Prefer healthy backends
+						for _, b := range healthyBackends {
+							backendList = append(backendList, b.URL)
+						}
+					} else {
+						// No healthy backends, use all backends
+						for _, b := range allBackends {
+							backendList = append(backendList, b.URL)
+						}
+					}
+
+					// Use round-robin to select backend
+					selectedURL := proxy.GetNextBackend(t, backendList)
+					if selectedURL == "" {
+						resultMutex.Lock()
+						typeErrors[t] = fmt.Errorf("no backend available for type: %s", t)
+						resultMutex.Unlock()
+						return
+					}
+
+					// Find backend by URL
+					for _, b := range allBackends {
+						if b.URL == selectedURL {
 							selectedBackend = &b
 							break
 						}
-					}
-				}
-				if selectedBackend == nil {
-					resultMutex.Lock()
-					typeErrors[t] = fmt.Errorf("no backend available for type: %s", t)
-					resultMutex.Unlock()
-					return
-				}
-			} else {
-				// Use round-robin to select backend
-				var backendList []string
-				if len(healthyBackends) > 0 {
-					// Prefer healthy backends
-					for _, b := range healthyBackends {
-						backendList = append(backendList, b.URL)
-					}
-				} else {
-					// No healthy backends, use all backends
-					for _, b := range allBackends {
-						backendList = append(backendList, b.URL)
-					}
-				}
-
-				// Use round-robin to select backend
-				selectedURL := proxy.GetNextBackend(t, backendList)
-				if selectedURL == "" {
-					resultMutex.Lock()
-					typeErrors[t] = fmt.Errorf("no backend available for type: %s", t)
-					resultMutex.Unlock()
-					return
-				}
-
-				// Find backend by URL
-				for _, b := range allBackends {
-					if b.URL == selectedURL {
-						selectedBackend = &b
-						break
 					}
 				}
 			}
@@ -351,9 +366,10 @@ func HealthAPIGetHandler(c *gin.Context) {
 
 // ConfigPostHandler handles POST /api/config - saves configuration
 type ConfigRequest struct {
-	DefaultBackend string            `json:"defaultBackend"`
-	Backends       []config.Backend  `json:"backends"`
-	TaskRouting    map[string]string `json:"taskRouting"`
+	DefaultBackend   string            `json:"defaultBackend"`
+	Backends         []config.Backend  `json:"backends"`
+	TaskRouting      map[string]string `json:"taskRouting"`
+	ModelTypeRouting map[string]string `json:"modelTypeRouting"`
 }
 
 func ConfigPostHandler(c *gin.Context) {
@@ -400,6 +416,7 @@ func ConfigPostHandler(c *gin.Context) {
 	cfg.DefaultBackend = req.DefaultBackend
 	cfg.Backends = req.Backends
 	cfg.TaskRouting = req.TaskRouting
+	cfg.ModelTypeRouting = req.ModelTypeRouting
 
 	// Save to file
 	if err := cfg.Save(); err != nil {

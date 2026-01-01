@@ -27,11 +27,12 @@ type BackendHealth struct {
 }
 
 type Config struct {
-		DefaultBackend string            `json:"defaultBackend"`
-		Backends       []Backend         `json:"backends"`
-		TaskRouting    map[string]string `json:"taskRouting"` // task -> backend name mapping
-		Health         map[string]BackendHealth `json:"-"` // backend name -> health status
-		mu             sync.RWMutex
+		DefaultBackend   string            `json:"defaultBackend"`
+		Backends         []Backend         `json:"backends"`
+		TaskRouting      map[string]string `json:"taskRouting"` // task -> backend name mapping
+		ModelTypeRouting map[string]string `json:"modelTypeRouting"` // modelType -> backend name mapping (for clip: textual, visual)
+		Health           map[string]BackendHealth `json:"-"` // backend name -> health status
+		mu               sync.RWMutex
 	}
 var (
 	instance *Config
@@ -42,10 +43,11 @@ var (
 func Load() *Config {
 	once.Do(func() {
 		instance = &Config{
-			DefaultBackend: "",
-			Backends:       []Backend{},
-			TaskRouting:    make(map[string]string),
-			Health:         make(map[string]BackendHealth),
+			DefaultBackend:   "",
+			Backends:         []Backend{},
+			TaskRouting:      make(map[string]string),
+			ModelTypeRouting: make(map[string]string),
+			Health:           make(map[string]BackendHealth),
 		}
 		instance.loadFromFile()
 	})
@@ -70,6 +72,7 @@ func (c *Config) loadFromFile() {
 	c.DefaultBackend = cfg.DefaultBackend
 	c.Backends = cfg.Backends
 	c.TaskRouting = cfg.TaskRouting
+	c.ModelTypeRouting = cfg.ModelTypeRouting
 }
 
 func (c *Config) Save() error {
@@ -169,7 +172,29 @@ func (c *Config) SetDefaultBackend(name string) {
 func (c *Config) ToJSON() ([]byte, error) {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
-	return json.MarshalIndent(c, "", "  ")
+
+	// Create a copy to avoid modifying the original
+	result := struct {
+		DefaultBackend   string            `json:"defaultBackend"`
+		Backends         []Backend         `json:"backends"`
+		TaskRouting      map[string]string `json:"taskRouting"`
+		ModelTypeRouting map[string]string `json:"modelTypeRouting"`
+	}{
+		DefaultBackend:   c.DefaultBackend,
+		Backends:         c.Backends,
+		TaskRouting:      c.TaskRouting,
+		ModelTypeRouting: c.ModelTypeRouting,
+	}
+
+	// Ensure maps are not nil
+	if result.TaskRouting == nil {
+		result.TaskRouting = make(map[string]string)
+	}
+	if result.ModelTypeRouting == nil {
+		result.ModelTypeRouting = make(map[string]string)
+	}
+
+	return json.MarshalIndent(result, "", "  ")
 }
 
 // SetHealthStatus sets the health status for a backend
@@ -285,5 +310,22 @@ func (c *Config) GetDefaultBackend() *Backend {
 			return &backend
 		}
 	}
+	return nil
+}
+
+// GetBackendByModelType returns the backend for a specific modelType (e.g., "textual", "visual")
+// Returns nil if no specific routing is configured for this modelType
+func (c *Config) GetBackendByModelType(modelType string) *Backend {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if backendName, ok := c.ModelTypeRouting[modelType]; ok {
+		for _, backend := range c.Backends {
+			if backend.Name == backendName {
+				return &backend
+			}
+		}
+	}
+
 	return nil
 }

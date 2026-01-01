@@ -261,6 +261,23 @@
             </div>
 
             <div class="section">
+                <h2>ModelType Routing (for CLIP)</h2>
+                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Configure routing for CLIP model types (textual/visual)</p>
+                <div id="modelTypeRoutingList" class="backend-list"></div>
+                <div class="routing-item">
+                    <select id="newModelType">
+                        <option value="">-- Select ModelType --</option>
+                        <option value="textual">textual</option>
+                        <option value="visual">visual</option>
+                    </select>
+                    <select id="newModelTypeBackend">
+                        <option value="">-- Select backend --</option>
+                    </select>
+                    <button class="btn btn-success" onclick="addModelTypeRouting()">Add</button>
+                </div>
+            </div>
+
+            <div class="section">
                 <button class="btn btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
                 <button class="btn btn-secondary" onclick="loadConfig()">🔄 Reload</button>
             </div>
@@ -271,7 +288,8 @@
         let config = {
             defaultBackend: '',
             backends: [],
-            taskRouting: {}
+            taskRouting: {},
+            modelTypeRouting: {}
         };
 
         function showStatus(message, isError = false) {
@@ -378,6 +396,35 @@
                 option.textContent = backend.name;
                 taskBackendSelect.appendChild(option);
             });
+
+            // Render modelType routing
+            const modelTypeRoutingList = document.getElementById('modelTypeRoutingList');
+            modelTypeRoutingList.innerHTML = '';
+            Object.entries(config.modelTypeRouting).forEach(([modelType, backendName]) => {
+                const div = document.createElement('div');
+                div.className = 'routing-item';
+                div.innerHTML = `
+                    <select onchange="updateModelTypeRouting('${modelType}', 'modelType', this.value)">
+                        <option value="textual" ${modelType === 'textual' ? 'selected' : ''}>textual</option>
+                        <option value="visual" ${modelType === 'visual' ? 'selected' : ''}>visual</option>
+                    </select>
+                    <select onchange="updateModelTypeRouting('${modelType}', 'backend', this.value)">
+                        ${config.backends.map(b => `<option value="${b.name}" ${b.name === backendName ? 'selected' : ''}>${b.name}</option>`).join('')}
+                    </select>
+                    <button class="btn btn-danger" onclick="removeModelTypeRouting('${modelType}')">Remove</button>
+                `;
+                modelTypeRoutingList.appendChild(div);
+            });
+
+            // Update modelType backend select
+            const modelTypeBackendSelect = document.getElementById('newModelTypeBackend');
+            modelTypeBackendSelect.innerHTML = '<option value="">-- Select backend --</option>';
+            config.backends.forEach(backend => {
+                const option = document.createElement('option');
+                option.value = backend.name;
+                option.textContent = backend.name;
+                modelTypeBackendSelect.appendChild(option);
+            });
         }
 
         function addBackend() {
@@ -411,6 +458,12 @@
             Object.keys(config.taskRouting).forEach(task => {
                 if (config.taskRouting[task] === backendName) {
                     delete config.taskRouting[task];
+                }
+            });
+            // Remove modelType routing for this backend
+            Object.keys(config.modelTypeRouting).forEach(modelType => {
+                if (config.modelTypeRouting[modelType] === backendName) {
+                    delete config.modelTypeRouting[modelType];
                 }
             });
             if (config.defaultBackend === backendName) {
@@ -450,6 +503,36 @@
                 }
             } else {
                 config.taskRouting[oldTask] = value;
+            }
+            renderConfig();
+        }
+
+        function addModelTypeRouting() {
+            const modelType = document.getElementById('newModelType').value;
+            const backend = document.getElementById('newModelTypeBackend').value;
+            if (!modelType || !backend) {
+                showStatus('Please select model type and backend', true);
+                return;
+            }
+            config.modelTypeRouting[modelType] = backend;
+            document.getElementById('newModelType').value = '';
+            document.getElementById('newModelTypeBackend').value = '';
+            renderConfig();
+        }
+
+        function removeModelTypeRouting(modelType) {
+            delete config.modelTypeRouting[modelType];
+            renderConfig();
+        }
+
+        function updateModelTypeRouting(oldModelType, field, value) {
+            if (field === 'modelType') {
+                if (oldModelType !== value) {
+                    config.modelTypeRouting[value] = config.modelTypeRouting[oldModelType];
+                    delete config.modelTypeRouting[oldModelType];
+                }
+            } else {
+                config.modelTypeRouting[oldModelType] = value;
             }
             renderConfig();
         }
