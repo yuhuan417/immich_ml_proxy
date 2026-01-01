@@ -35,5 +35,8 @@ COPY --from=builder /app/static ./static
 # Expose port
 EXPOSE 8080
 
+# Set GIN_MODE to release
+ENV GIN_MODE=release
+
 # Run the application
 CMD ["./immich_ml_proxy"]
