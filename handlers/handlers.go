@@ -157,75 +157,76 @@ func PredictHandler(c *gin.Context) {
 				return
 			}
 
-			// Check if this is a clip task with modelType routing
+			// Step 1: Try modelType routing first (for clip: textual/visual)
 			var selectedBackend *config.Backend
 			for _, entry := range te {
-				if entry.Task == "clip" {
-					// For clip task, try to route by modelType (textual/visual)
-					backend := cfg.GetBackendByModelType(entry.Type)
-					if backend != nil {
-						selectedBackend = backend
-						break
+				// Try to route by modelType (e.g., textual, visual)
+				backend := cfg.GetBackendByModelType(entry.Type)
+				if backend != nil {
+					selectedBackend = backend
+					break
+				}
+			}
+
+			// Step 2: If no modelType-specific backend found, try task-based routing
+			if selectedBackend == nil {
+				// Get the task name from entries (all entries in this group have the same type but may have different tasks)
+				// We use the first entry's task for routing
+				if len(te) > 0 {
+					taskName := te[0].Task
+					// Check if this task has specific routing in taskRouting
+					healthyBackends := cfg.GetHealthyBackendsByType(taskName)
+					allBackends := cfg.GetBackendsByType(taskName)
+
+					if len(allBackends) > 0 {
+						// Use round-robin to select backend
+						var backendList []string
+						if len(healthyBackends) > 0 {
+							// Prefer healthy backends
+							for _, b := range healthyBackends {
+								backendList = append(backendList, b.URL)
+							}
+						} else {
+							// No healthy backends, use all backends
+							for _, b := range allBackends {
+								backendList = append(backendList, b.URL)
+							}
+						}
+
+						// Use round-robin to select backend
+						selectedURL := proxy.GetNextBackend(taskName, backendList)
+						if selectedURL != "" {
+							// Find backend by URL
+							for _, b := range allBackends {
+								if b.URL == selectedURL {
+									selectedBackend = &b
+									break
+								}
+							}
+						}
 					}
 				}
 			}
 
-			// If no modelType-specific backend found, fall back to task type routing
+			// Step 3: If still no backend found, fallback to default backend
 			if selectedBackend == nil {
-				// Get healthy backends for this type
-				healthyBackends := cfg.GetHealthyBackendsByType(t)
-
-				// Get all backends for this type
-				allBackends := cfg.GetBackendsByType(t)
-
-				// Fallback to default backend if no type-specific backends
-				if len(allBackends) == 0 {
-					// No type-specific backends, use default backend
-					if cfg.DefaultBackend != "" {
-						for _, b := range cfg.Backends {
-							if b.Name == cfg.DefaultBackend {
-								selectedBackend = &b
-								break
-							}
-						}
-					}
-					if selectedBackend == nil {
-						resultMutex.Lock()
-						typeErrors[t] = fmt.Errorf("no backend available for type: %s", t)
-						resultMutex.Unlock()
-						return
-					}
-				} else {
-					// Use round-robin to select backend
-					var backendList []string
-					if len(healthyBackends) > 0 {
-						// Prefer healthy backends
-						for _, b := range healthyBackends {
-							backendList = append(backendList, b.URL)
-						}
-					} else {
-						// No healthy backends, use all backends
-						for _, b := range allBackends {
-							backendList = append(backendList, b.URL)
-						}
-					}
-
-					// Use round-robin to select backend
-					selectedURL := proxy.GetNextBackend(t, backendList)
-					if selectedURL == "" {
-						resultMutex.Lock()
-						typeErrors[t] = fmt.Errorf("no backend available for type: %s", t)
-						resultMutex.Unlock()
-						return
-					}
-
-					// Find backend by URL
-					for _, b := range allBackends {
-						if b.URL == selectedURL {
+				if cfg.DefaultBackend != "" {
+					for _, b := range cfg.Backends {
+						if b.Name == cfg.DefaultBackend {
 							selectedBackend = &b
 							break
 						}
 					}
+				}
+				if selectedBackend == nil {
+					taskName := ""
+					if len(te) > 0 {
+						taskName = te[0].Task
+					}
+					resultMutex.Lock()
+					typeErrors[t] = fmt.Errorf("no backend available for task: %s, type: %s", taskName, t)
+					resultMutex.Unlock()
+					return
 				}
 			}
 
