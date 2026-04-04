@@ -5,568 +5,1622 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Immich ML Proxy - Configuration</title>
     <style>
+        :root {
+            --bg: #07111f;
+            --bg-accent: #0f3a67;
+            --panel: rgba(255, 255, 255, 0.96);
+            --panel-muted: #f4f7fb;
+            --panel-border: #d8e1ee;
+            --text: #162033;
+            --text-muted: #5c6b82;
+            --accent: #ff6b35;
+            --accent-strong: #db4c1c;
+            --success-bg: #dff5e8;
+            --success-text: #15603a;
+            --error-bg: #fde7e7;
+            --error-text: #8c2424;
+            --warning-bg: #fff2d9;
+            --warning-text: #8a5a00;
+            --info-bg: #e7f0ff;
+            --info-text: #1953a6;
+            --shadow: 0 24px 80px rgba(4, 15, 29, 0.24);
+        }
+
         * {
+            box-sizing: border-box;
             margin: 0;
             padding: 0;
-            box-sizing: border-box;
         }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            font-family: "Avenir Next", "Segoe UI", sans-serif;
+            background:
+                radial-gradient(circle at top right, rgba(255, 107, 53, 0.28), transparent 26%),
+                linear-gradient(135deg, var(--bg) 0%, #0b2542 48%, var(--bg-accent) 100%);
+            color: var(--text);
             min-height: 100vh;
             padding: 20px;
         }
-        .container {
-            max-width: 900px;
+
+        a {
+            color: inherit;
+            text-decoration: none;
+        }
+
+        button,
+        input,
+        select {
+            font: inherit;
+        }
+
+        button:focus-visible,
+        input:focus-visible,
+        select:focus-visible,
+        a:focus-visible {
+            outline: 3px solid rgba(255, 107, 53, 0.32);
+            outline-offset: 2px;
+        }
+
+        .shell {
+            max-width: 1380px;
             margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            background: var(--panel);
+            border-radius: 24px;
+            box-shadow: var(--shadow);
             overflow: hidden;
+            backdrop-filter: blur(10px);
         }
-        .header {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+
+        .masthead {
+            padding: 26px 30px 30px;
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 24%),
+                linear-gradient(135deg, #091727 0%, #12335a 56%, #ed6a2d 100%);
             color: white;
-            padding: 30px;
-            text-align: center;
         }
-        .header h1 {
-            font-size: 28px;
-            margin-bottom: 8px;
+
+        .topbar {
+            display: flex;
+            justify-content: space-between;
+            gap: 16px;
+            align-items: center;
+            margin-bottom: 26px;
+            flex-wrap: wrap;
         }
-        .header p {
-            opacity: 0.9;
-            font-size: 14px;
+
+        .brand-block {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
         }
+
+        .brand-kicker {
+            font-size: 12px;
+            letter-spacing: 0.08em;
+            text-transform: uppercase;
+            color: rgba(255, 255, 255, 0.72);
+        }
+
+        .brand-title {
+            font-size: 18px;
+            font-weight: 700;
+        }
+
+        .nav-tabs {
+            display: inline-flex;
+            align-items: center;
+            gap: 8px;
+            padding: 6px;
+            border: 1px solid rgba(255, 255, 255, 0.18);
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.08);
+        }
+
+        .nav-link {
+            padding: 9px 14px;
+            border-radius: 999px;
+            color: rgba(255, 255, 255, 0.82);
+            font-weight: 600;
+            transition: background 0.18s ease, color 0.18s ease;
+        }
+
+        .nav-link:hover,
+        .nav-link.active {
+            background: rgba(255, 255, 255, 0.16);
+            color: white;
+        }
+
+        .hero {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr) auto;
+            gap: 22px;
+            align-items: end;
+        }
+
+        .hero-copy h1 {
+            font-size: 32px;
+            line-height: 1.1;
+            margin-bottom: 10px;
+            max-width: 820px;
+        }
+
+        .hero-copy p {
+            max-width: 780px;
+            line-height: 1.6;
+            color: rgba(255, 255, 255, 0.82);
+        }
+
+        .hero-status {
+            display: grid;
+            gap: 10px;
+            justify-items: end;
+            align-content: end;
+        }
+
+        .status-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 6px 12px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .status-pill.success {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .status-pill.error {
+            background: var(--error-bg);
+            color: var(--error-text);
+        }
+
+        .status-pill.warning {
+            background: var(--warning-bg);
+            color: var(--warning-text);
+        }
+
+        .status-pill.info {
+            background: var(--info-bg);
+            color: var(--info-text);
+        }
+
+        .hero-meta {
+            color: rgba(255, 255, 255, 0.76);
+            max-width: 320px;
+            text-align: right;
+            line-height: 1.5;
+        }
+
         .content {
-            padding: 30px;
+            padding: 28px;
+            display: grid;
+            gap: 18px;
         }
-        .section {
-            margin-bottom: 30px;
-        }
-        .section h2 {
-            font-size: 20px;
-            color: #333;
-            margin-bottom: 15px;
-            padding-bottom: 10px;
-            border-bottom: 2px solid #667eea;
-        }
-        .form-group {
-            margin-bottom: 20px;
-        }
-        label {
-            display: block;
-            margin-bottom: 8px;
-            color: #555;
-            font-weight: 500;
-        }
-        input[type="text"], select {
-            width: 100%;
-            padding: 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
-            font-size: 14px;
-            transition: border-color 0.3s;
-        }
-        input[type="text"]:focus, select:focus {
-            outline: none;
-            border-color: #667eea;
-        }
-        .backend-list {
-            background: #f8f9fa;
-            border-radius: 8px;
-            padding: 15px;
-            margin-bottom: 15px;
-        }
-        .backend-item {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-            align-items: center;
-        }
-        .backend-item:last-child {
-            margin-bottom: 0;
-        }
-        .backend-item input {
-            flex: 1;
-        }
-        .btn {
-            padding: 12px 24px;
-            border: none;
-            border-radius: 8px;
-            cursor: pointer;
-            font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
-        }
-        .btn-primary {
-            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-            color: white;
-        }
-        .btn-primary:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
-        }
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-            padding: 8px 16px;
-        }
-        .btn-success {
-            background: #28a745;
-            color: white;
-        }
-        .routing-item {
-            display: flex;
-            gap: 10px;
-            margin-bottom: 10px;
-            align-items: center;
-        }
-        .routing-item input {
-            flex: 2;
-            min-width: 200px;
-        }
-        .routing-item select {
-            flex: 1;
-            min-width: 150px;
-        }
-        .status {
-            padding: 15px;
-            border-radius: 8px;
-            margin-bottom: 20px;
+
+        .notice {
             display: none;
+            align-items: flex-start;
+            gap: 12px;
+            border-radius: 16px;
+            padding: 14px 16px;
+            border: 1px solid transparent;
+            line-height: 1.5;
         }
-        .status.success {
-            background: #d4edda;
-            color: #155724;
-            border: 1px solid #c3e6cb;
+
+        .notice.show {
+            display: flex;
         }
-        .status.error {
-            background: #f8d7da;
-            color: #721c24;
-            border: 1px solid #f5c6cb;
+
+        .notice.success {
+            background: var(--success-bg);
+            border-color: rgba(21, 96, 58, 0.16);
+            color: var(--success-text);
         }
-        .loading {
-            display: none;
-            text-align: center;
+
+        .notice.error {
+            background: var(--error-bg);
+            border-color: rgba(140, 36, 36, 0.16);
+            color: var(--error-text);
+        }
+
+        .notice.warning {
+            background: var(--warning-bg);
+            border-color: rgba(138, 90, 0, 0.16);
+            color: var(--warning-text);
+        }
+
+        .notice.info {
+            background: var(--info-bg);
+            border-color: rgba(25, 83, 166, 0.16);
+            color: var(--info-text);
+        }
+
+        .toolbar-grid,
+        .summary-grid {
+            display: grid;
+            gap: 16px;
+        }
+
+        .summary-grid {
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+        }
+
+        .panel {
+            background: white;
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
             padding: 20px;
-            color: #666;
+            box-shadow: 0 12px 30px rgba(20, 31, 46, 0.05);
         }
-        .loading::after {
-            content: '';
-            display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #667eea;
-            border-top-color: transparent;
+
+        .panel-header {
+            display: flex;
+            justify-content: space-between;
+            gap: 14px;
+            align-items: flex-start;
+            margin-bottom: 16px;
+            flex-wrap: wrap;
+        }
+
+        .panel-title {
+            font-size: 20px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .panel-subtitle {
+            color: var(--text-muted);
+            line-height: 1.55;
+            margin-top: 6px;
+            max-width: 820px;
+        }
+
+        .summary-value {
+            font-size: 30px;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .summary-label {
+            color: var(--text-muted);
+            margin-top: 6px;
+            font-size: 13px;
+            letter-spacing: 0.02em;
+        }
+
+        .field-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: 16px;
+        }
+
+        .field {
+            display: grid;
+            gap: 8px;
+        }
+
+        .field label {
+            font-size: 13px;
+            font-weight: 700;
+            color: var(--text-muted);
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .field-hint {
+            color: var(--text-muted);
+            font-size: 13px;
+            line-height: 1.5;
+        }
+
+        input[type="text"],
+        select {
+            width: 100%;
+            padding: 12px 14px;
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            background: white;
+            color: var(--text);
+            transition: border-color 0.18s ease, box-shadow 0.18s ease;
+        }
+
+        input[type="text"]:focus,
+        select:focus {
+            border-color: rgba(255, 107, 53, 0.6);
+            box-shadow: 0 0 0 4px rgba(255, 107, 53, 0.12);
+            outline: none;
+        }
+
+        .btn-row {
+            display: flex;
+            gap: 10px;
+            flex-wrap: wrap;
+        }
+
+        .btn {
+            border: none;
+            border-radius: 12px;
+            padding: 11px 18px;
+            font-size: 14px;
+            font-weight: 700;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, opacity 0.18s ease;
+        }
+
+        .btn:hover:not(:disabled) {
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(18, 31, 51, 0.12);
+        }
+
+        .btn:disabled {
+            cursor: not-allowed;
+            opacity: 0.56;
+        }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: var(--text);
+        }
+
+        .btn-danger {
+            background: #bf2525;
+            color: white;
+        }
+
+        .btn-success {
+            background: #0f8b5f;
+            color: white;
+        }
+
+        .btn-ghost {
+            background: #eef3f9;
+            color: var(--text);
+        }
+
+        .collection {
+            display: grid;
+            gap: 12px;
+        }
+
+        .collection-row {
+            display: grid;
+            gap: 12px;
+            padding: 14px;
+            border-radius: 16px;
+            border: 1px solid var(--panel-border);
+            background: var(--panel-muted);
+        }
+
+        .backend-row {
+            grid-template-columns: minmax(140px, 0.9fr) minmax(260px, 1.4fr) auto auto;
+            align-items: center;
+        }
+
+        .routing-row {
+            grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) auto;
+            align-items: center;
+        }
+
+        .row-stack {
+            display: grid;
+            gap: 10px;
+        }
+
+        .add-form {
+            display: grid;
+            gap: 14px;
+            margin-top: 16px;
+            padding-top: 16px;
+            border-top: 1px solid var(--panel-border);
+        }
+
+        .add-form .form-actions {
+            display: flex;
+            justify-content: flex-end;
+        }
+
+        .helper-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-top: 8px;
+        }
+
+        .helper-chip,
+        .health-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            padding: 5px 10px;
+            border-radius: 999px;
+            font-size: 12px;
+            font-weight: 700;
+        }
+
+        .helper-chip {
+            background: #eef3f9;
+            color: var(--text-muted);
+        }
+
+        .health-stack {
+            display: grid;
+            justify-items: end;
+            gap: 4px;
+            min-width: 118px;
+        }
+
+        .health-badge.healthy {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .health-badge.unhealthy {
+            background: var(--error-bg);
+            color: var(--error-text);
+        }
+
+        .health-badge.unknown {
+            background: #e2e8f0;
+            color: #465469;
+        }
+
+        .health-meta {
+            color: var(--text-muted);
+            font-size: 12px;
+            text-align: right;
+            min-height: 16px;
+        }
+
+        .empty-state {
+            border: 1px dashed var(--panel-border);
+            border-radius: 16px;
+            padding: 26px 20px;
+            text-align: center;
+            color: var(--text-muted);
+            background: var(--panel-muted);
+            line-height: 1.6;
+        }
+
+        .busy-indicator {
+            display: inline-flex;
+            align-items: center;
+            gap: 10px;
+            color: var(--text-muted);
+            font-size: 13px;
+            min-height: 20px;
+        }
+
+        .busy-indicator::before {
+            content: "";
+            width: 16px;
+            height: 16px;
+            border: 2px solid rgba(255, 107, 53, 0.22);
+            border-top-color: var(--accent);
             border-radius: 50%;
             animation: spin 0.6s linear infinite;
-            margin-left: 10px;
-            vertical-align: middle;
+            display: none;
         }
+
+        .busy-indicator.busy::before {
+            display: inline-block;
+        }
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .health-status {
-            display: inline-flex;
-            align-items: center;
-            padding: 4px 12px;
-            border-radius: 20px;
-            font-size: 12px;
-            font-weight: 500;
-            min-width: 80px;
-            justify-content: center;
-        }
-        .health-status.healthy {
-            background: #d4edda;
-            color: #155724;
-        }
-        .health-status.unhealthy {
-            background: #f8d7da;
-            color: #721c24;
-        }
-        .health-status.unknown {
-            background: #e2e3e5;
-            color: #383d41;
-        }
-        .health-status::before {
-            content: '';
-            display: inline-block;
-            width: 8px;
-            height: 8px;
-            border-radius: 50%;
-            margin-right: 6px;
-        }
-        .health-status.healthy::before {
-            background: #28a745;
-        }
-        .health-status.unhealthy::before {
-            background: #dc3545;
-        }
-        .health-status.unknown::before {
-            background: #6c757d;
+
+        @media (max-width: 960px) {
+            body {
+                padding: 12px;
+            }
+
+            .masthead,
+            .content {
+                padding: 20px;
+            }
+
+            .hero {
+                grid-template-columns: 1fr;
+            }
+
+            .hero-status {
+                justify-items: start;
+            }
+
+            .hero-meta {
+                text-align: left;
+            }
+
+            .backend-row,
+            .routing-row {
+                grid-template-columns: 1fr;
+            }
+
+            .health-stack {
+                justify-items: start;
+            }
+
+            .health-meta {
+                text-align: left;
+            }
         }
     </style>
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>🚀 Immich ML Proxy Configuration</h1>
-            <p>Manage grouped task routing and CLIP split routing</p>
-        </div>
-
-        <div class="content">
-            <div id="status" class="status"></div>
-            <div id="loading" class="loading">Loading...</div>
-
-            <div class="section">
-                <h2>Default Backend</h2>
-                <div class="form-group">
-                    <label for="defaultBackend">Select Default Backend</label>
-                    <select id="defaultBackend">
-                        <option value="">-- Add backends first --</option>
-                    </select>
+    <div class="shell">
+        <header class="masthead">
+            <div class="topbar">
+                <div class="brand-block">
+                    <span class="brand-kicker">Immich ML Proxy</span>
+                    <span class="brand-title">Operations Console</span>
+                </div>
+                <nav class="nav-tabs" aria-label="Primary">
+                    <a class="nav-link active" href="/config" aria-current="page">Configuration</a>
+                    <a class="nav-link" href="/debug">Debug Console</a>
+                </nav>
+            </div>
+            <div class="hero">
+                <div class="hero-copy">
+                    <h1>Control task routing without drifting into invalid config.</h1>
+                    <p>Edit backends, task routes, and CLIP modelType routing in one place. Local changes are tracked, backend renames migrate references automatically, and invalid saves are blocked before they hit the API.</p>
+                </div>
+                <div class="hero-status">
+                    <span id="dirtyIndicator" class="status-pill success">Saved</span>
+                    <p id="saveSummary" class="hero-meta">Server and browser state are in sync.</p>
                 </div>
             </div>
+        </header>
 
-            <div class="section">
-                <h2>Backend Servers</h2>
-                <div id="backendList" class="backend-list"></div>
-                <div class="backend-item">
-                    <input type="text" id="newBackendName" placeholder="Backend name (e.g., backend1)">
-                    <input type="text" id="newBackendURL" placeholder="Backend URL (e.g., http://localhost:3003)">
-                    <button class="btn btn-success" onclick="addBackend()">Add</button>
+        <main class="content">
+            <div id="notice" class="notice" role="status" aria-live="polite"></div>
+
+            <section class="summary-grid" aria-label="Configuration Summary">
+                <div class="panel">
+                    <div class="summary-value" id="backendCount">0</div>
+                    <div class="summary-label">Configured Backends</div>
                 </div>
-            </div>
-
-            <div class="section">
-                <h2>Task Routing</h2>
-                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Grouped tasks stay intact when forwarded. Use this for tasks like <code>facial-recognition</code> and <code>ocr</code>, where sub-types depend on each other.</p>
-                <div id="routingList" class="backend-list"></div>
-                <div class="routing-item">
-                    <input type="text" id="newTaskName" list="taskSuggestions" placeholder="Task name (e.g., facial-recognition)">
-                    <datalist id="taskSuggestions">
-                        <option value="clip">
-                        <option value="facial-recognition">
-                        <option value="ocr">
-                    </datalist>
-                    <select id="newTaskBackend">
-                        <option value="">-- Select backend --</option>
-                    </select>
-                    <button class="btn btn-success" onclick="addRouting()">Add</button>
+                <div class="panel">
+                    <div class="summary-value" id="taskRouteCount">0</div>
+                    <div class="summary-label">Task Routes</div>
                 </div>
-            </div>
-
-            <div class="section">
-                <h2>CLIP ModelType Routing</h2>
-                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">CLIP is the only task that is split by sub-type. <code>textual</code> and <code>visual</code> may arrive together or independently, and each present sub-type is routed on its own. Missing routes fall back to the task backend and then the default backend.</p>
-                <div id="modelTypeRoutingList" class="backend-list"></div>
-                <div class="routing-item">
-                    <select id="newModelType">
-                        <option value="">-- Select ModelType --</option>
-                        <option value="textual">textual</option>
-                        <option value="visual">visual</option>
-                    </select>
-                    <select id="newModelTypeBackend">
-                        <option value="">-- Select backend --</option>
-                    </select>
-                    <button class="btn btn-success" onclick="addModelTypeRouting()">Add</button>
+                <div class="panel">
+                    <div class="summary-value" id="modelRouteCount">0</div>
+                    <div class="summary-label">CLIP ModelType Routes</div>
                 </div>
-            </div>
+                <div class="panel">
+                    <div class="summary-value" id="unhealthyCount">0</div>
+                    <div class="summary-label">Unhealthy Backends</div>
+                </div>
+            </section>
 
-            <div class="section">
-                <button class="btn btn-primary" onclick="saveConfig()">💾 Save Configuration</button>
-                <button class="btn btn-secondary" onclick="loadConfig()">🔄 Reload</button>
-            </div>
-        </div>
+            <section class="toolbar-grid">
+                <div class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <div class="panel-title">Persistence</div>
+                            <p class="panel-subtitle">Save only when the in-browser draft differs from the last loaded config. Reload will discard local edits after confirmation.</p>
+                        </div>
+                        <div id="busyIndicator" class="busy-indicator" aria-live="polite"></div>
+                    </div>
+                    <div class="btn-row">
+                        <button id="saveButton" class="btn btn-primary" type="button" disabled>Save Configuration</button>
+                        <button id="reloadButton" class="btn btn-secondary" type="button">Reload From Server</button>
+                    </div>
+                </div>
+
+                <div class="panel">
+                    <div class="panel-header">
+                        <div>
+                            <div class="panel-title">Default Backend</div>
+                            <p class="panel-subtitle">Fallback destination for any request that does not match an explicit task or modelType route.</p>
+                        </div>
+                    </div>
+                    <div class="field">
+                        <label for="defaultBackend">Select Default Backend</label>
+                        <select id="defaultBackend"></select>
+                        <p class="field-hint">If you remove the current default backend, the first remaining backend is promoted automatically.</p>
+                    </div>
+                </div>
+            </section>
+
+            <section class="panel" aria-labelledby="backendsTitle">
+                <div class="panel-header">
+                    <div>
+                        <h2 id="backendsTitle" class="panel-title">Backend Servers</h2>
+                        <p class="panel-subtitle">Backend names are used as routing keys. Renaming a backend updates the default backend, task routing, modelType routing, and local health display references together.</p>
+                    </div>
+                </div>
+                <div id="backendList" class="collection"></div>
+                <form id="backendCreateForm" class="add-form">
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="newBackendName">Backend Name</label>
+                            <input type="text" id="newBackendName" name="backendName" placeholder="backend-primary" autocomplete="off">
+                        </div>
+                        <div class="field">
+                            <label for="newBackendURL">Backend URL</label>
+                            <input type="text" id="newBackendURL" name="backendUrl" placeholder="http://localhost:3003" autocomplete="off">
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-success" type="submit">Add Backend</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel" aria-labelledby="taskRoutingTitle">
+                <div class="panel-header">
+                    <div>
+                        <h2 id="taskRoutingTitle" class="panel-title">Task Routing</h2>
+                        <p class="panel-subtitle">Use task routing for grouped requests such as <code>facial-recognition</code> and <code>ocr</code>. Legacy <code>facial_recognition</code> input is normalized automatically.</p>
+                    </div>
+                </div>
+                <div class="helper-list" aria-hidden="true">
+                    <span class="helper-chip">clip</span>
+                    <span class="helper-chip">facial-recognition</span>
+                    <span class="helper-chip">ocr</span>
+                </div>
+                <div id="routingList" class="collection" style="margin-top: 16px;"></div>
+                <form id="routingCreateForm" class="add-form">
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="newTaskName">Task Name</label>
+                            <input type="text" id="newTaskName" list="taskSuggestions" placeholder="facial-recognition" autocomplete="off">
+                            <datalist id="taskSuggestions">
+                                <option value="clip"></option>
+                                <option value="facial-recognition"></option>
+                                <option value="ocr"></option>
+                            </datalist>
+                        </div>
+                        <div class="field">
+                            <label for="newTaskBackend">Target Backend</label>
+                            <select id="newTaskBackend"></select>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-success" type="submit">Add Task Route</button>
+                    </div>
+                </form>
+            </section>
+
+            <section class="panel" aria-labelledby="modelRoutingTitle">
+                <div class="panel-header">
+                    <div>
+                        <h2 id="modelRoutingTitle" class="panel-title">CLIP ModelType Routing</h2>
+                        <p class="panel-subtitle">Only CLIP is split by modelType. Missing modelType routes fall back to task routing and then the default backend.</p>
+                    </div>
+                </div>
+                <div class="helper-list" aria-hidden="true">
+                    <span class="helper-chip">textual</span>
+                    <span class="helper-chip">visual</span>
+                </div>
+                <div id="modelTypeRoutingList" class="collection" style="margin-top: 16px;"></div>
+                <form id="modelTypeCreateForm" class="add-form">
+                    <div class="field-grid">
+                        <div class="field">
+                            <label for="newModelType">ModelType</label>
+                            <select id="newModelType">
+                                <option value="">Select modelType</option>
+                                <option value="textual">textual</option>
+                                <option value="visual">visual</option>
+                            </select>
+                        </div>
+                        <div class="field">
+                            <label for="newModelTypeBackend">Target Backend</label>
+                            <select id="newModelTypeBackend"></select>
+                        </div>
+                    </div>
+                    <div class="form-actions">
+                        <button class="btn btn-success" type="submit">Add ModelType Route</button>
+                    </div>
+                </form>
+            </section>
+        </main>
     </div>
 
     <script>
-        let config = {
-            defaultBackend: '',
-            backends: [],
-            taskRouting: {},
-            modelTypeRouting: {}
+        const TASK_SUGGESTIONS = ['clip', 'facial-recognition', 'ocr'];
+        const MODEL_TYPES = ['textual', 'visual'];
+        const HEALTH_TEXT = {
+            healthy: 'Healthy',
+            unhealthy: 'Unhealthy',
+            unknown: 'Unknown'
         };
 
-        function showStatus(message, isError = false) {
-            const status = document.getElementById('status');
-            status.textContent = message;
-            status.className = 'status ' + (isError ? 'error' : 'success');
-            status.style.display = 'block';
-            setTimeout(() => {
-                status.style.display = 'none';
-            }, 3000);
+        let config = createEmptyConfig();
+        let savedSnapshot = stableStringify(config);
+        let healthData = {};
+        let isSaving = false;
+        let busyLabel = '';
+        let noticeTimer = null;
+
+        const refs = {};
+
+        document.addEventListener('DOMContentLoaded', init);
+
+        function init() {
+            refs.notice = document.getElementById('notice');
+            refs.dirtyIndicator = document.getElementById('dirtyIndicator');
+            refs.saveSummary = document.getElementById('saveSummary');
+            refs.busyIndicator = document.getElementById('busyIndicator');
+            refs.saveButton = document.getElementById('saveButton');
+            refs.reloadButton = document.getElementById('reloadButton');
+            refs.defaultBackend = document.getElementById('defaultBackend');
+            refs.backendList = document.getElementById('backendList');
+            refs.routingList = document.getElementById('routingList');
+            refs.modelTypeRoutingList = document.getElementById('modelTypeRoutingList');
+            refs.backendCreateForm = document.getElementById('backendCreateForm');
+            refs.routingCreateForm = document.getElementById('routingCreateForm');
+            refs.modelTypeCreateForm = document.getElementById('modelTypeCreateForm');
+            refs.newBackendName = document.getElementById('newBackendName');
+            refs.newBackendURL = document.getElementById('newBackendURL');
+            refs.newTaskName = document.getElementById('newTaskName');
+            refs.newTaskBackend = document.getElementById('newTaskBackend');
+            refs.newModelType = document.getElementById('newModelType');
+            refs.newModelTypeBackend = document.getElementById('newModelTypeBackend');
+            refs.backendCount = document.getElementById('backendCount');
+            refs.taskRouteCount = document.getElementById('taskRouteCount');
+            refs.modelRouteCount = document.getElementById('modelRouteCount');
+            refs.unhealthyCount = document.getElementById('unhealthyCount');
+
+            bindEvents();
+            renderApp();
+            loadConfig({ force: true, showNoticeAfterLoad: false });
+            refreshHealthStatus();
+            setInterval(refreshHealthStatus, 5000);
+            window.addEventListener('beforeunload', handleBeforeUnload);
         }
 
-        function showLoading(show) {
-            document.getElementById('loading').style.display = show ? 'block' : 'none';
+        function bindEvents() {
+            refs.defaultBackend.addEventListener('change', () => {
+                config.defaultBackend = refs.defaultBackend.value;
+                renderApp();
+            });
+
+            refs.saveButton.addEventListener('click', saveConfig);
+            refs.reloadButton.addEventListener('click', () => loadConfig({ force: false, showNoticeAfterLoad: true }));
+
+            refs.backendCreateForm.addEventListener('submit', event => {
+                event.preventDefault();
+                addBackend();
+            });
+
+            refs.routingCreateForm.addEventListener('submit', event => {
+                event.preventDefault();
+                addTaskRouting();
+            });
+
+            refs.modelTypeCreateForm.addEventListener('submit', event => {
+                event.preventDefault();
+                addModelTypeRouting();
+            });
+
+            refs.backendList.addEventListener('click', handleBackendListClick);
+            refs.backendList.addEventListener('change', handleBackendListChange);
+
+            refs.routingList.addEventListener('click', handleRoutingListClick);
+            refs.routingList.addEventListener('change', handleRoutingListChange);
+
+            refs.modelTypeRoutingList.addEventListener('click', handleModelTypeRoutingClick);
+            refs.modelTypeRoutingList.addEventListener('change', handleModelTypeRoutingChange);
         }
 
-        async function loadConfig() {
-            showLoading(true);
+        function createEmptyConfig() {
+            return {
+                defaultBackend: '',
+                backends: [],
+                taskRouting: {},
+                modelTypeRouting: {}
+            };
+        }
+
+        function normalizeTaskNameInput(task) {
+            const trimmed = (task || '').trim();
+            if (trimmed === 'facial_recognition') {
+                return 'facial-recognition';
+            }
+            return trimmed;
+        }
+
+        function normalizeConfig(raw) {
+            const result = createEmptyConfig();
+            result.defaultBackend = typeof raw?.defaultBackend === 'string' ? raw.defaultBackend : '';
+
+            if (Array.isArray(raw?.backends)) {
+                result.backends = raw.backends.map(backend => ({
+                    name: typeof backend?.name === 'string' ? backend.name : '',
+                    url: typeof backend?.url === 'string' ? backend.url : ''
+                }));
+            }
+
+            if (raw?.taskRouting && typeof raw.taskRouting === 'object') {
+                for (const [taskName, backendName] of Object.entries(raw.taskRouting)) {
+                    result.taskRouting[normalizeTaskNameInput(taskName)] = String(backendName);
+                }
+            }
+
+            if (raw?.modelTypeRouting && typeof raw.modelTypeRouting === 'object') {
+                for (const [modelType, backendName] of Object.entries(raw.modelTypeRouting)) {
+                    result.modelTypeRouting[modelType] = String(backendName);
+                }
+            }
+
+            return result;
+        }
+
+        function cloneValue(value) {
+            return JSON.parse(JSON.stringify(value));
+        }
+
+        function stableStringify(value) {
+            if (Array.isArray(value)) {
+                return `[${value.map(stableStringify).join(',')}]`;
+            }
+
+            if (value && typeof value === 'object') {
+                const keys = Object.keys(value).sort();
+                return `{${keys.map(key => `${JSON.stringify(key)}:${stableStringify(value[key])}`).join(',')}}`;
+            }
+
+            return JSON.stringify(value);
+        }
+
+        function snapshotConfig(nextConfig) {
+            return stableStringify(normalizeConfig(nextConfig));
+        }
+
+        function isDirty() {
+            return snapshotConfig(config) !== savedSnapshot;
+        }
+
+        function setBusy(label = '') {
+            busyLabel = label;
+            refs.busyIndicator.textContent = label;
+            refs.busyIndicator.classList.toggle('busy', Boolean(label));
+        }
+
+        function showNotice(message, type = 'info', { persist = false } = {}) {
+            if (noticeTimer) {
+                clearTimeout(noticeTimer);
+                noticeTimer = null;
+            }
+
+            refs.notice.textContent = message;
+            refs.notice.className = `notice show ${type}`;
+
+            if (!persist) {
+                noticeTimer = setTimeout(hideNotice, 3200);
+            }
+        }
+
+        function hideNotice() {
+            refs.notice.className = 'notice';
+            refs.notice.textContent = '';
+        }
+
+        function renderApp() {
+            renderSummary();
+            renderDefaultBackend();
+            renderBackends();
+            renderTaskRouting();
+            renderModelTypeRouting();
+            renderActionState();
+        }
+
+        function renderSummary() {
+            refs.backendCount.textContent = String(config.backends.length);
+            refs.taskRouteCount.textContent = String(Object.keys(config.taskRouting).length);
+            refs.modelRouteCount.textContent = String(Object.keys(config.modelTypeRouting).length);
+
+            let unhealthyCount = 0;
+            for (const backend of config.backends) {
+                if ((healthData[backend.name]?.status || 'unknown') === 'unhealthy') {
+                    unhealthyCount++;
+                }
+            }
+            refs.unhealthyCount.textContent = String(unhealthyCount);
+        }
+
+        function renderActionState() {
+            const dirty = isDirty();
+            refs.saveButton.disabled = isSaving || !dirty;
+            refs.reloadButton.disabled = isSaving;
+
+            if (isSaving) {
+                refs.dirtyIndicator.textContent = 'Saving';
+                refs.dirtyIndicator.className = 'status-pill info';
+                refs.saveSummary.textContent = 'Persisting the current draft to the server.';
+                return;
+            }
+
+            if (dirty) {
+                refs.dirtyIndicator.textContent = 'Unsaved Changes';
+                refs.dirtyIndicator.className = 'status-pill warning';
+                refs.saveSummary.textContent = 'Local edits have not been persisted yet.';
+                return;
+            }
+
+            refs.dirtyIndicator.textContent = 'Saved';
+            refs.dirtyIndicator.className = 'status-pill success';
+            refs.saveSummary.textContent = 'Server and browser state are in sync.';
+        }
+
+        function renderDefaultBackend() {
+            refs.defaultBackend.innerHTML = '';
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = config.backends.length === 0 ? 'Add a backend first' : 'Select default backend';
+            refs.defaultBackend.appendChild(placeholder);
+
+            for (const backend of config.backends) {
+                const option = document.createElement('option');
+                option.value = backend.name;
+                option.textContent = `${backend.name} (${backend.url})`;
+                refs.defaultBackend.appendChild(option);
+            }
+
+            refs.defaultBackend.value = config.defaultBackend;
+        }
+
+        function renderBackends() {
+            refs.backendList.innerHTML = '';
+
+            if (config.backends.length === 0) {
+                refs.backendList.appendChild(createEmptyState('No backends configured yet. Add at least one backend before saving.'));
+                return;
+            }
+
+            config.backends.forEach((backend, index) => {
+                const row = createElement('div', 'collection-row backend-row');
+
+                const nameInput = createTextInput(backend.name, 'Name');
+                nameInput.dataset.action = 'backend-name';
+                nameInput.dataset.index = String(index);
+
+                const urlInput = createTextInput(backend.url, 'URL');
+                urlInput.dataset.action = 'backend-url';
+                urlInput.dataset.index = String(index);
+
+                const healthStack = createHealthStack(backend.name);
+
+                const removeButton = createButton('Remove', 'btn btn-danger', {
+                    type: 'button',
+                    dataAction: 'remove-backend',
+                    dataIndex: String(index)
+                });
+
+                row.appendChild(nameInput);
+                row.appendChild(urlInput);
+                row.appendChild(healthStack);
+                row.appendChild(removeButton);
+                refs.backendList.appendChild(row);
+            });
+        }
+
+        function renderTaskRouting() {
+            refs.routingList.innerHTML = '';
+            populateBackendSelect(refs.newTaskBackend, 'Select backend', '');
+
+            const entries = Object.entries(config.taskRouting);
+            if (entries.length === 0) {
+                refs.routingList.appendChild(createEmptyState('No task-specific routes yet. Requests will fall back to the default backend.'));
+                return;
+            }
+
+            entries.sort(([left], [right]) => left.localeCompare(right));
+            for (const [taskName, backendName] of entries) {
+                const row = createElement('div', 'collection-row routing-row');
+
+                const taskInput = createTextInput(taskName, 'Task name');
+                taskInput.setAttribute('list', 'taskSuggestions');
+                taskInput.dataset.action = 'routing-task';
+                taskInput.dataset.task = taskName;
+
+                const backendSelect = createBackendSelect(backendName);
+                backendSelect.dataset.action = 'routing-backend';
+                backendSelect.dataset.task = taskName;
+
+                const removeButton = createButton('Remove', 'btn btn-danger', {
+                    type: 'button',
+                    dataAction: 'remove-routing',
+                    dataTask: taskName
+                });
+
+                row.appendChild(taskInput);
+                row.appendChild(backendSelect);
+                row.appendChild(removeButton);
+                refs.routingList.appendChild(row);
+            }
+        }
+
+        function renderModelTypeRouting() {
+            refs.modelTypeRoutingList.innerHTML = '';
+            populateBackendSelect(refs.newModelTypeBackend, 'Select backend', '');
+
+            const entries = Object.entries(config.modelTypeRouting);
+            if (entries.length === 0) {
+                refs.modelTypeRoutingList.appendChild(createEmptyState('No CLIP modelType routes yet. CLIP requests will use task routing and then the default backend.'));
+                return;
+            }
+
+            entries.sort(([left], [right]) => left.localeCompare(right));
+            for (const [modelType, backendName] of entries) {
+                const row = createElement('div', 'collection-row routing-row');
+
+                const modelTypeSelect = createModelTypeSelect(modelType);
+                modelTypeSelect.dataset.action = 'model-type';
+                modelTypeSelect.dataset.modelType = modelType;
+
+                const backendSelect = createBackendSelect(backendName);
+                backendSelect.dataset.action = 'model-backend';
+                backendSelect.dataset.modelType = modelType;
+
+                const removeButton = createButton('Remove', 'btn btn-danger', {
+                    type: 'button',
+                    dataAction: 'remove-model-route',
+                    dataModelType: modelType
+                });
+
+                row.appendChild(modelTypeSelect);
+                row.appendChild(backendSelect);
+                row.appendChild(removeButton);
+                refs.modelTypeRoutingList.appendChild(row);
+            }
+        }
+
+        function createElement(tagName, className = '', textContent = '') {
+            const element = document.createElement(tagName);
+            if (className) {
+                element.className = className;
+            }
+            if (textContent) {
+                element.textContent = textContent;
+            }
+            return element;
+        }
+
+        function createButton(text, className, options = {}) {
+            const button = createElement('button', className, text);
+            button.type = options.type || 'button';
+            if (options.dataAction) {
+                button.dataset.action = options.dataAction;
+            }
+            if (options.dataIndex) {
+                button.dataset.index = options.dataIndex;
+            }
+            if (options.dataTask) {
+                button.dataset.task = options.dataTask;
+            }
+            if (options.dataModelType) {
+                button.dataset.modelType = options.dataModelType;
+            }
+            return button;
+        }
+
+        function createTextInput(value, placeholder) {
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = value;
+            input.placeholder = placeholder;
+            input.autocomplete = 'off';
+            return input;
+        }
+
+        function createBackendSelect(selectedBackend) {
+            const select = document.createElement('select');
+            populateBackendSelect(select, 'Select backend', selectedBackend);
+            return select;
+        }
+
+        function createModelTypeSelect(selectedModelType) {
+            const select = document.createElement('select');
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = 'Select modelType';
+            select.appendChild(placeholder);
+
+            for (const modelType of MODEL_TYPES) {
+                const option = document.createElement('option');
+                option.value = modelType;
+                option.textContent = modelType;
+                const alreadyAssigned = Object.keys(config.modelTypeRouting).some(key => key === modelType && key !== selectedModelType);
+                option.disabled = alreadyAssigned;
+                select.appendChild(option);
+            }
+
+            select.value = selectedModelType;
+            return select;
+        }
+
+        function populateBackendSelect(select, placeholderText, selectedValue) {
+            select.innerHTML = '';
+
+            const placeholder = document.createElement('option');
+            placeholder.value = '';
+            placeholder.textContent = placeholderText;
+            select.appendChild(placeholder);
+
+            for (const backend of config.backends) {
+                const option = document.createElement('option');
+                option.value = backend.name;
+                option.textContent = backend.name;
+                select.appendChild(option);
+            }
+
+            select.value = selectedValue || '';
+        }
+
+        function createHealthStack(backendName) {
+            const stack = createElement('div', 'health-stack');
+            const status = healthData[backendName] || { status: 'unknown', lastCheck: 0, error: '' };
+
+            const badge = createElement('span', `health-badge ${status.status || 'unknown'}`, HEALTH_TEXT[status.status] || 'Unknown');
+            badge.dataset.healthBadge = backendName;
+
+            const meta = createElement('span', 'health-meta');
+            meta.dataset.healthMeta = backendName;
+            meta.textContent = describeHealthMeta(status);
+            if (status.error) {
+                badge.title = status.error;
+                meta.title = status.error;
+            }
+
+            stack.appendChild(badge);
+            stack.appendChild(meta);
+            return stack;
+        }
+
+        function describeHealthMeta(status) {
+            if (!status || !status.lastCheck) {
+                return 'No recent probe';
+            }
+
+            const timestamp = new Date(status.lastCheck * 1000);
+            return `Checked ${timestamp.toLocaleTimeString()}`;
+        }
+
+        function createEmptyState(message) {
+            return createElement('div', 'empty-state', message);
+        }
+
+        function handleBackendListClick(event) {
+            const button = event.target.closest('button[data-action="remove-backend"]');
+            if (!button) {
+                return;
+            }
+
+            removeBackend(Number(button.dataset.index));
+        }
+
+        function handleBackendListChange(event) {
+            const target = event.target;
+            const index = Number(target.dataset.index);
+
+            if (target.dataset.action === 'backend-name') {
+                renameBackend(index, target.value);
+            }
+            if (target.dataset.action === 'backend-url') {
+                updateBackendURL(index, target.value);
+            }
+        }
+
+        function handleRoutingListClick(event) {
+            const button = event.target.closest('button[data-action="remove-routing"]');
+            if (!button) {
+                return;
+            }
+
+            delete config.taskRouting[button.dataset.task];
+            renderApp();
+        }
+
+        function handleRoutingListChange(event) {
+            const target = event.target;
+            const task = target.dataset.task;
+
+            if (target.dataset.action === 'routing-task') {
+                renameTaskRoute(task, target.value);
+            }
+            if (target.dataset.action === 'routing-backend') {
+                config.taskRouting[task] = target.value;
+                renderApp();
+            }
+        }
+
+        function handleModelTypeRoutingClick(event) {
+            const button = event.target.closest('button[data-action="remove-model-route"]');
+            if (!button) {
+                return;
+            }
+
+            delete config.modelTypeRouting[button.dataset.modelType];
+            renderApp();
+        }
+
+        function handleModelTypeRoutingChange(event) {
+            const target = event.target;
+            const modelType = target.dataset.modelType;
+
+            if (target.dataset.action === 'model-type') {
+                renameModelTypeRoute(modelType, target.value);
+            }
+            if (target.dataset.action === 'model-backend') {
+                config.modelTypeRouting[modelType] = target.value;
+                renderApp();
+            }
+        }
+
+        function addBackend() {
+            const name = refs.newBackendName.value.trim();
+            const url = refs.newBackendURL.value.trim();
+
+            if (!name || !url) {
+                showNotice('Backend name and URL are both required.', 'error');
+                return;
+            }
+
+            if (config.backends.some(backend => backend.name === name)) {
+                showNotice(`Backend name "${name}" already exists.`, 'error');
+                return;
+            }
+
+            config.backends.push({ name, url });
+            if (!config.defaultBackend) {
+                config.defaultBackend = name;
+            }
+
+            refs.newBackendName.value = '';
+            refs.newBackendURL.value = '';
+            renderApp();
+            showNotice(`Backend "${name}" added to the local draft.`, 'info');
+        }
+
+        function removeBackend(index) {
+            if (config.backends.length <= 1) {
+                showNotice('At least one backend must remain configured.', 'error');
+                return;
+            }
+
+            const [removed] = config.backends.splice(index, 1);
+            delete healthData[removed.name];
+
+            for (const [taskName, backendName] of Object.entries(config.taskRouting)) {
+                if (backendName === removed.name) {
+                    delete config.taskRouting[taskName];
+                }
+            }
+
+            for (const [modelType, backendName] of Object.entries(config.modelTypeRouting)) {
+                if (backendName === removed.name) {
+                    delete config.modelTypeRouting[modelType];
+                }
+            }
+
+            if (config.defaultBackend === removed.name) {
+                config.defaultBackend = config.backends[0]?.name || '';
+                showNotice(`Removed "${removed.name}". Default backend changed to "${config.defaultBackend}".`, 'warning');
+            } else {
+                showNotice(`Removed backend "${removed.name}" from the local draft.`, 'info');
+            }
+
+            renderApp();
+        }
+
+        function renameBackend(index, nextName) {
+            const backend = config.backends[index];
+            const previousName = backend.name;
+            const normalizedName = nextName.trim();
+
+            if (!normalizedName) {
+                showNotice('Backend name cannot be empty.', 'error');
+                renderApp();
+                return;
+            }
+
+            if (normalizedName !== previousName && config.backends.some((item, itemIndex) => itemIndex !== index && item.name === normalizedName)) {
+                showNotice(`Backend name "${normalizedName}" already exists.`, 'error');
+                renderApp();
+                return;
+            }
+
+            if (normalizedName === previousName) {
+                return;
+            }
+
+            backend.name = normalizedName;
+
+            if (config.defaultBackend === previousName) {
+                config.defaultBackend = normalizedName;
+            }
+
+            for (const taskName of Object.keys(config.taskRouting)) {
+                if (config.taskRouting[taskName] === previousName) {
+                    config.taskRouting[taskName] = normalizedName;
+                }
+            }
+
+            for (const modelType of Object.keys(config.modelTypeRouting)) {
+                if (config.modelTypeRouting[modelType] === previousName) {
+                    config.modelTypeRouting[modelType] = normalizedName;
+                }
+            }
+
+            if (healthData[previousName] && !healthData[normalizedName]) {
+                healthData[normalizedName] = healthData[previousName];
+            }
+            if (previousName !== normalizedName) {
+                delete healthData[previousName];
+            }
+
+            renderApp();
+            showNotice(`Renamed backend "${previousName}" to "${normalizedName}" and migrated local references.`, 'info');
+        }
+
+        function updateBackendURL(index, nextURL) {
+            const normalizedURL = nextURL.trim();
+            if (!normalizedURL) {
+                showNotice('Backend URL cannot be empty.', 'error');
+                renderApp();
+                return;
+            }
+
+            config.backends[index].url = normalizedURL;
+            renderActionState();
+        }
+
+        function addTaskRouting() {
+            const taskName = normalizeTaskNameInput(refs.newTaskName.value);
+            const backendName = refs.newTaskBackend.value;
+
+            if (!taskName || !backendName) {
+                showNotice('Task routing needs both a task name and a backend.', 'error');
+                return;
+            }
+
+            config.taskRouting[taskName] = backendName;
+            refs.newTaskName.value = '';
+            refs.newTaskBackend.value = '';
+            renderApp();
+            showNotice(`Task route "${taskName}" updated in the local draft.`, 'info');
+        }
+
+        function renameTaskRoute(previousTask, nextTaskInput) {
+            const nextTask = normalizeTaskNameInput(nextTaskInput);
+            if (!nextTask) {
+                showNotice('Task name cannot be empty.', 'error');
+                renderApp();
+                return;
+            }
+
+            if (nextTask !== previousTask && Object.prototype.hasOwnProperty.call(config.taskRouting, nextTask)) {
+                showNotice(`Task route "${nextTask}" already exists.`, 'error');
+                renderApp();
+                return;
+            }
+
+            if (nextTask === previousTask) {
+                return;
+            }
+
+            config.taskRouting[nextTask] = config.taskRouting[previousTask];
+            delete config.taskRouting[previousTask];
+            renderApp();
+            showNotice(`Task route renamed to "${nextTask}".`, 'info');
+        }
+
+        function addModelTypeRouting() {
+            const modelType = refs.newModelType.value;
+            const backendName = refs.newModelTypeBackend.value;
+
+            if (!modelType || !backendName) {
+                showNotice('ModelType routing needs both a modelType and a backend.', 'error');
+                return;
+            }
+
+            config.modelTypeRouting[modelType] = backendName;
+            refs.newModelType.value = '';
+            refs.newModelTypeBackend.value = '';
+            renderApp();
+            showNotice(`ModelType route "${modelType}" updated in the local draft.`, 'info');
+        }
+
+        function renameModelTypeRoute(previousModelType, nextModelType) {
+            if (!nextModelType) {
+                showNotice('ModelType cannot be empty.', 'error');
+                renderApp();
+                return;
+            }
+
+            if (nextModelType !== previousModelType && Object.prototype.hasOwnProperty.call(config.modelTypeRouting, nextModelType)) {
+                showNotice(`ModelType route "${nextModelType}" already exists.`, 'error');
+                renderApp();
+                return;
+            }
+
+            if (nextModelType === previousModelType) {
+                return;
+            }
+
+            config.modelTypeRouting[nextModelType] = config.modelTypeRouting[previousModelType];
+            delete config.modelTypeRouting[previousModelType];
+            renderApp();
+            showNotice(`ModelType route renamed to "${nextModelType}".`, 'info');
+        }
+
+        function validateConfigDraft() {
+            if (config.backends.length === 0) {
+                return 'At least one backend must be configured.';
+            }
+
+            const backendNames = new Set();
+            for (const backend of config.backends) {
+                if (!backend.name.trim() || !backend.url.trim()) {
+                    return 'Every backend needs both a name and a URL.';
+                }
+                if (backendNames.has(backend.name)) {
+                    return `Duplicate backend name: ${backend.name}`;
+                }
+                backendNames.add(backend.name);
+            }
+
+            if (!config.defaultBackend) {
+                return 'A default backend must be selected before saving.';
+            }
+
+            if (!backendNames.has(config.defaultBackend)) {
+                return 'The selected default backend no longer exists.';
+            }
+
+            for (const [taskName, backendName] of Object.entries(config.taskRouting)) {
+                if (!taskName.trim()) {
+                    return 'Task routing contains an empty task name.';
+                }
+                if (!backendNames.has(backendName)) {
+                    return `Task routing for ${taskName} references an unknown backend ${backendName}.`;
+                }
+            }
+
+            for (const [modelType, backendName] of Object.entries(config.modelTypeRouting)) {
+                if (!backendNames.has(backendName)) {
+                    return `ModelType routing for ${modelType} references an unknown backend ${backendName}.`;
+                }
+            }
+
+            return '';
+        }
+
+        async function loadConfig({ force = false, showNoticeAfterLoad = true } = {}) {
+            if (!force && isDirty() && !window.confirm('Reload from server and discard local changes?')) {
+                return;
+            }
+
+            setBusy('Loading configuration...');
             try {
                 const response = await fetch('/api/config');
-                if (!response.ok) throw new Error('Failed to load configuration');
-                config = await response.json();
-                renderConfig();
-                showStatus('Configuration loaded successfully');
+                if (!response.ok) {
+                    throw new Error('Failed to load configuration');
+                }
+
+                const nextConfig = normalizeConfig(await response.json());
+                config = nextConfig;
+                savedSnapshot = snapshotConfig(nextConfig);
+                renderApp();
+
+                if (showNoticeAfterLoad) {
+                    showNotice('Configuration reloaded from the server.', 'success');
+                } else {
+                    hideNotice();
+                }
             } catch (error) {
-                showStatus(error.message, true);
+                showNotice(error.message, 'error', { persist: true });
+            } finally {
+                setBusy('');
             }
-            showLoading(false);
         }
 
         async function saveConfig() {
-            showLoading(true);
+            const validationError = validateConfigDraft();
+            if (validationError) {
+                showNotice(validationError, 'error', { persist: true });
+                return;
+            }
+
+            if (!isDirty()) {
+                showNotice('There are no local changes to save.', 'info');
+                return;
+            }
+
+            isSaving = true;
+            renderActionState();
+            setBusy('Saving configuration...');
+
             try {
                 const response = await fetch('/api/config', {
                     method: 'POST',
                     headers: {
                         'Content-Type': 'application/json'
                     },
-                    body: JSON.stringify(config)
+                    body: JSON.stringify(cloneValue(config))
                 });
+
                 if (!response.ok) {
                     const errorData = await response.json();
                     throw new Error(errorData.error || 'Failed to save configuration');
                 }
-                showStatus('Configuration saved successfully');
+
+                savedSnapshot = snapshotConfig(config);
+                renderActionState();
+                showNotice('Configuration saved successfully.', 'success');
+                refreshHealthStatus();
             } catch (error) {
-                showStatus(error.message, true);
+                showNotice(error.message, 'error', { persist: true });
+            } finally {
+                isSaving = false;
+                renderActionState();
+                setBusy('');
             }
-            showLoading(false);
         }
 
-        function renderConfig() {
-            // Render default backend
-            const defaultSelect = document.getElementById('defaultBackend');
-            defaultSelect.innerHTML = '<option value="">-- No default backend --</option>';
-            config.backends.forEach(backend => {
-                const option = document.createElement('option');
-                option.value = backend.name;
-                option.textContent = backend.name + ' (' + backend.url + ')';
-                option.selected = backend.name === config.defaultBackend;
-                defaultSelect.appendChild(option);
-            });
-            defaultSelect.onchange = (e) => {
-                config.defaultBackend = e.target.value;
-            };
-
-            // Render backends
-            const backendList = document.getElementById('backendList');
-            backendList.innerHTML = '';
-            config.backends.forEach((backend, index) => {
-                const div = document.createElement('div');
-                div.className = 'backend-item';
-                div.innerHTML = `
-                    <input type="text" value="${backend.name}" onchange="updateBackend(${index}, 'name', this.value)" placeholder="Name">
-                    <input type="text" value="${backend.url}" onchange="updateBackend(${index}, 'url', this.value)" placeholder="URL">
-                    <span id="health-${backend.name}" class="health-status unknown">Unknown</span>
-                    <button class="btn btn-danger" onclick="removeBackend(${index})">Remove</button>
-                `;
-                backendList.appendChild(div);
-            });
-
-            // Render routing
-            const routingList = document.getElementById('routingList');
-            routingList.innerHTML = '';
-            Object.entries(config.taskRouting).forEach(([task, backendName]) => {
-                const div = document.createElement('div');
-                div.className = 'routing-item';
-                div.innerHTML = `
-                    <input type="text" value="${task}" list="taskSuggestions" onchange="updateRouting('${task}', 'task', this.value)" placeholder="Task">
-                    <select onchange="updateRouting('${task}', 'backend', this.value)">
-                        ${config.backends.map(b => `<option value="${b.name}" ${b.name === backendName ? 'selected' : ''}>${b.name}</option>`).join('')}
-                    </select>
-                    <button class="btn btn-danger" onclick="removeRouting('${task}')">Remove</button>
-                `;
-                routingList.appendChild(div);
-            });
-
-            // Update task backend select
-            const taskBackendSelect = document.getElementById('newTaskBackend');
-            taskBackendSelect.innerHTML = '<option value="">-- Select backend --</option>';
-            config.backends.forEach(backend => {
-                const option = document.createElement('option');
-                option.value = backend.name;
-                option.textContent = backend.name;
-                taskBackendSelect.appendChild(option);
-            });
-
-            // Render modelType routing
-            const modelTypeRoutingList = document.getElementById('modelTypeRoutingList');
-            modelTypeRoutingList.innerHTML = '';
-            Object.entries(config.modelTypeRouting).forEach(([modelType, backendName]) => {
-                const div = document.createElement('div');
-                div.className = 'routing-item';
-                div.innerHTML = `
-                    <select onchange="updateModelTypeRouting('${modelType}', 'modelType', this.value)">
-                        <option value="textual" ${modelType === 'textual' ? 'selected' : ''}>textual</option>
-                        <option value="visual" ${modelType === 'visual' ? 'selected' : ''}>visual</option>
-                    </select>
-                    <select onchange="updateModelTypeRouting('${modelType}', 'backend', this.value)">
-                        ${config.backends.map(b => `<option value="${b.name}" ${b.name === backendName ? 'selected' : ''}>${b.name}</option>`).join('')}
-                    </select>
-                    <button class="btn btn-danger" onclick="removeModelTypeRouting('${modelType}')">Remove</button>
-                `;
-                modelTypeRoutingList.appendChild(div);
-            });
-
-            // Update modelType backend select
-            const modelTypeBackendSelect = document.getElementById('newModelTypeBackend');
-            modelTypeBackendSelect.innerHTML = '<option value="">-- Select backend --</option>';
-            config.backends.forEach(backend => {
-                const option = document.createElement('option');
-                option.value = backend.name;
-                option.textContent = backend.name;
-                modelTypeBackendSelect.appendChild(option);
-            });
-        }
-
-        function addBackend() {
-            const name = document.getElementById('newBackendName').value.trim();
-            const url = document.getElementById('newBackendURL').value.trim();
-            if (!name || !url) {
-                showStatus('Please enter backend name and URL', true);
-                return;
-            }
-            if (config.backends.find(b => b.name === name)) {
-                showStatus('Backend name already exists', true);
-                return;
-            }
-            config.backends.push({ name, url });
-            document.getElementById('newBackendName').value = '';
-            document.getElementById('newBackendURL').value = '';
-            renderConfig();
-        }
-
-        function removeBackend(index) {
-            const backendName = config.backends[index].name;
-
-            // Prevent removing if it's the only backend
-            if (config.backends.length === 1) {
-                showStatus('Cannot remove the only backend. At least one backend is required.', true);
-                return;
-            }
-
-            config.backends.splice(index, 1);
-            // Remove routing for this backend
-            Object.keys(config.taskRouting).forEach(task => {
-                if (config.taskRouting[task] === backendName) {
-                    delete config.taskRouting[task];
-                }
-            });
-            // Remove modelType routing for this backend
-            Object.keys(config.modelTypeRouting).forEach(modelType => {
-                if (config.modelTypeRouting[modelType] === backendName) {
-                    delete config.modelTypeRouting[modelType];
-                }
-            });
-            if (config.defaultBackend === backendName) {
-                config.defaultBackend = '';
-                showStatus('Default backend removed. Please select a new default backend.', true);
-            }
-            renderConfig();
-        }
-
-        function updateBackend(index, field, value) {
-            config.backends[index][field] = value;
-        }
-
-        function addRouting() {
-            const task = document.getElementById('newTaskName').value.trim();
-            const backend = document.getElementById('newTaskBackend').value;
-            if (!task || !backend) {
-                showStatus('Please enter task name and select backend', true);
-                return;
-            }
-            config.taskRouting[task] = backend;
-            document.getElementById('newTaskName').value = '';
-            document.getElementById('newTaskBackend').value = '';
-            renderConfig();
-        }
-
-        function removeRouting(task) {
-            delete config.taskRouting[task];
-            renderConfig();
-        }
-
-        function updateRouting(oldTask, field, value) {
-            if (field === 'task') {
-                if (oldTask !== value) {
-                    config.taskRouting[value] = config.taskRouting[oldTask];
-                    delete config.taskRouting[oldTask];
-                }
-            } else {
-                config.taskRouting[oldTask] = value;
-            }
-            renderConfig();
-        }
-
-        function addModelTypeRouting() {
-            const modelType = document.getElementById('newModelType').value;
-            const backend = document.getElementById('newModelTypeBackend').value;
-            if (!modelType || !backend) {
-                showStatus('Please select model type and backend', true);
-                return;
-            }
-            config.modelTypeRouting[modelType] = backend;
-            document.getElementById('newModelType').value = '';
-            document.getElementById('newModelTypeBackend').value = '';
-            renderConfig();
-        }
-
-        function removeModelTypeRouting(modelType) {
-            delete config.modelTypeRouting[modelType];
-            renderConfig();
-        }
-
-        function updateModelTypeRouting(oldModelType, field, value) {
-            if (field === 'modelType') {
-                if (oldModelType !== value) {
-                    config.modelTypeRouting[value] = config.modelTypeRouting[oldModelType];
-                    delete config.modelTypeRouting[oldModelType];
-                }
-            } else {
-                config.modelTypeRouting[oldModelType] = value;
-            }
-            renderConfig();
-        }
-
-        // Load config on page load
-        loadConfig();
-
-        // Periodically refresh health status
         async function refreshHealthStatus() {
             try {
                 const response = await fetch('/api/health');
-                if (!response.ok) return;
-                const healthData = await response.json();
+                if (!response.ok) {
+                    return;
+                }
 
-                // Update health status display for each backend
-                Object.entries(healthData).forEach(([backendName, health]) => {
-                    const healthElement = document.getElementById(`health-${backendName}`);
-                    if (healthElement) {
-                        healthElement.className = `health-status ${health.status}`;
-                        healthElement.textContent = health.status.charAt(0).toUpperCase() + health.status.slice(1);
-                        if (health.error) {
-                            healthElement.title = health.error;
-                        }
-                    }
-                });
+                healthData = await response.json();
+                updateVisibleHealthBadges();
+                renderSummary();
             } catch (error) {
                 console.error('Failed to refresh health status:', error);
             }
         }
 
-        // Refresh health status every 5 seconds
-        setInterval(refreshHealthStatus, 5000);
-        refreshHealthStatus();
+        function updateVisibleHealthBadges() {
+            for (const backend of config.backends) {
+                const status = healthData[backend.name] || { status: 'unknown', lastCheck: 0, error: '' };
+                const badge = document.querySelector(`[data-health-badge="${cssEscape(backend.name)}"]`);
+                const meta = document.querySelector(`[data-health-meta="${cssEscape(backend.name)}"]`);
+                if (!badge || !meta) {
+                    continue;
+                }
+
+                badge.className = `health-badge ${status.status || 'unknown'}`;
+                badge.textContent = HEALTH_TEXT[status.status] || 'Unknown';
+                badge.title = status.error || '';
+                meta.textContent = describeHealthMeta(status);
+                meta.title = status.error || '';
+            }
+        }
+
+        function cssEscape(value) {
+            if (window.CSS && typeof window.CSS.escape === 'function') {
+                return window.CSS.escape(value);
+            }
+            return String(value).replace(/["\\]/g, '\\$&');
+        }
+
+        function handleBeforeUnload(event) {
+            if (!isDirty()) {
+                return;
+            }
+
+            event.preventDefault();
+            event.returnValue = '';
+        }
+
     </script>
 </body>
 </html>
