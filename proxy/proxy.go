@@ -46,6 +46,9 @@ func (b *RoundRobinBalancer) GetNextBackend(typeName string, backends []string) 
 	if !ok {
 		index = 0
 	}
+	if index >= len(backends) {
+		index %= len(backends)
+	}
 
 	// Select backend
 	backend := backends[index]

@@ -384,6 +384,18 @@ func validateRoutingBackends(backends []config.Backend, taskRouting map[string]s
 	return nil
 }
 
+func validateBackendDefinitions(backends []config.Backend) error {
+	backendNames := make(map[string]struct{}, len(backends))
+	for _, backend := range backends {
+		if _, exists := backendNames[backend.Name]; exists {
+			return fmt.Errorf("duplicate backend name: %s", backend.Name)
+		}
+		backendNames[backend.Name] = struct{}{}
+	}
+
+	return nil
+}
+
 // ConfigGetHandler handles GET /config - returns web configuration UI
 func ConfigGetHandler(c *gin.Context) {
 	c.File("static/config.html")
@@ -428,6 +440,12 @@ func ConfigPostHandler(c *gin.Context) {
 	if len(req.Backends) == 0 {
 		c.JSON(http.StatusBadRequest, gin.H{
 			"error": "At least one backend must be configured",
+		})
+		return
+	}
+	if err := validateBackendDefinitions(req.Backends); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
 		})
 		return
 	}
