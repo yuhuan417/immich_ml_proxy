@@ -1,14 +1,15 @@
 # Immich ML Proxy
 
-A proxy service for Immich ML with support for multi-backend routing, type-based task distribution, health monitoring, and comprehensive debugging capabilities.
+A proxy service for Immich ML with support for multi-backend routing, task-aware dispatch, health monitoring, and comprehensive debugging capabilities.
 
 ## Features
 
 - **Multi-backend Support**: Configure multiple Immich ML backend servers
-- **Type-based Routing**: Automatically route requests to different backends based on type (e.g., clip, facial_recognition, ocr)
-- **Round-robin Load Balancing**: Distribute requests across multiple healthy backends for the same type
+- **Task-aware Routing**: Keep dependent task sub-types together for tasks like `facial-recognition` and `ocr`
+- **CLIP Split Routing**: Route `clip.textual` and `clip.visual` independently when they should run on different backends
+- **Round-robin Load Balancing**: Distribute requests across healthy backends for each routed task
 - **Health Monitoring**: Continuous health checking with automatic failover
-- **Concurrent Processing**: Process multiple types in parallel for improved performance
+- **Concurrent Processing**: Process independent dispatch groups in parallel for improved performance
 - **Web Configuration UI**: Simple web interface for managing backends and routing with real-time health status
 - **Debug Mode**: Comprehensive request/response logging and debugging tools
 - **Request Recording**: Capture and inspect incoming and outgoing HTTP requests/responses
@@ -19,25 +20,28 @@ A proxy service for Immich ML with support for multi-backend routing, type-based
 Returns a simple web page with links to the configuration and debug interfaces.
 
 ### GET /ping
-Checks the health status of all configured backends and verifies that each type has at least one healthy backend.
+Checks the health status of all configured backends and verifies that each routed task/model type has a healthy backend.
 
 **Behavior**:
 - Checks health of all backends in parallel by calling their `/ping` endpoint
 - Updates health status for each backend based on response
 - Verifies that the default backend is healthy (handles all non-routed types)
-- Verifies that each type in `taskRouting` has at least one healthy backend
+- Verifies that each task in `taskRouting` has at least one healthy backend
+- Verifies that each configured CLIP `modelTypeRouting` target is healthy
 
 **Response**:
 - Returns `"pong"` with HTTP 200 if:
   - Default backend is healthy
-  - Every type in `taskRouting` has at least one healthy backend
+  - Every task in `taskRouting` has at least one healthy backend
+  - Every configured CLIP `modelTypeRouting` target is healthy
 - Returns HTTP 503 (Service Unavailable) if:
   - No backends are configured
   - Default backend is unhealthy
-  - Any type in `taskRouting` lacks healthy backends
+  - Any task in `taskRouting` lacks healthy backends
+  - Any configured CLIP `modelTypeRouting` target is unhealthy
 
 ### POST /predict
-Routes inference requests to appropriate backends based on type. Groups entries by type and processes them concurrently with health-aware round-robin load balancing.
+Routes inference requests to appropriate backends based on task semantics. Dependent tasks stay grouped, while CLIP can be split by model type and merged back into one response.
 
 **Request Parameters**:
 - `entries`: JSON string containing task configuration with nested structure
@@ -46,22 +50,23 @@ Routes inference requests to appropriate backends based on type. Groups entries 
 - `text`: Text content (optional, multipart form data)
 
 **Behavior**:
-- Parses entries and groups them by type (not task)
-- For each type:
-  - Gets healthy backends for that type from `taskRouting`
-  - If no type-specific routing configured, uses default backend
-  - Uses round-robin to select backend from healthy backends
-  - If no healthy backends available, falls back to all backends
-  - Forwards request to selected backend
+- Normalizes legacy `facial_recognition` requests/config entries to `facial-recognition`
+- Keeps `facial-recognition` and `ocr` grouped so their dependent sub-types are forwarded together
+- Splits `clip` into independent `textual` and `visual` requests
+- Supports CLIP requests that contain either one model type or both model types
+- For each dispatch group:
+  - Uses `modelTypeRouting` first for split CLIP requests
+  - Falls back to task routing from `taskRouting`
+  - Falls back again to `defaultBackend` if no task-specific route exists
+  - Prefers healthy routed backends when available
   - Updates backend health status based on response (200 = healthy, other = unhealthy)
-- Processes all types concurrently for better performance
-- Merges results from all types and returns them in the original order
+- Processes dispatch groups concurrently and merges split CLIP responses back into one JSON response
 
 **Health Status Updates**:
 - Backend marked as healthy: Returns HTTP 200
 - Backend marked as unhealthy: Returns non-200 status or connection error
 
-**Response**: JSON object with results from all types
+**Response**: JSON object with results merged back under their original task keys
 
 ### GET /config
 Returns the web configuration interface.
@@ -108,11 +113,19 @@ Saves configuration.
     {
       "name": "backend2",
       "url": "http://localhost:3004"
+    },
+    {
+      "name": "backend3",
+      "url": "http://localhost:3005"
     }
   ],
   "taskRouting": {
-    "facial_recognition": "backend1",
+    "facial-recognition": "backend1",
     "search": "backend2"
+  },
+  "modelTypeRouting": {
+    "textual": "backend2",
+    "visual": "backend3"
   }
 }
 ```
@@ -173,24 +186,34 @@ Configuration is saved in `config.json`:
     {
       "name": "backend2",
       "url": "http://localhost:3004"
+    },
+    {
+      "name": "backend3",
+      "url": "http://localhost:3005"
     }
   ],
   "taskRouting": {
     "clip": "backend2",
-    "facial_recognition": "backend1"
+    "facial-recognition": "backend1"
+  },
+  "modelTypeRouting": {
+    "textual": "backend2",
+    "visual": "backend3"
   }
 }
 ```
 
 **Configuration Fields**:
-- `defaultBackend`: Name of the backend that handles all types not in `taskRouting`
+- `defaultBackend`: Name of the backend that handles tasks without explicit routing
 - `backends`: List of backend servers with name and URL
-- `taskRouting`: Maps type names to backend names (e.g., `clip` → `backend2`)
+- `taskRouting`: Maps task names to backend names (e.g., `facial-recognition` → `backend1`)
+- `modelTypeRouting`: Maps CLIP model types to backend names (e.g., `textual` → `backend2`)
 
-**Type Routing**:
-- Types defined in `taskRouting` are routed to their specific backends
-- All other types are routed to the `defaultBackend`
-- Health checks verify that both default backend and routed types have healthy backends
+**Dispatch Rules**:
+- `facial-recognition` and `ocr` stay grouped and are routed using `taskRouting`
+- `clip` can arrive with `textual`, `visual`, or both, and each present model type is routed independently via `modelTypeRouting`, with fallback to `taskRouting["clip"]` and then `defaultBackend`
+- All other tasks are routed to the `defaultBackend`
+- Health checks verify the default backend, routed tasks, and configured CLIP model-type routes
 
 ## Running
 
@@ -227,19 +250,24 @@ The service listens on port `:3004` by default.
 Send a POST request to `http://localhost:3004/predict` with multipart form data:
 
 ```bash
-# Request for facial_recognition type (routed to backend1)
+# Request for grouped facial-recognition (routed to backend1)
 curl -X POST http://localhost:3004/predict \
-  -F "entries={\"facial_recognition\": {\"image\": {}}}" \
+  -F "entries={\"facial-recognition\": {\"detection\": {}, \"recognition\": {}}}" \
   -F "image=@photo.jpg"
 
-# Request for clip type (routed to backend2)
+# Request for split CLIP with both model types present
 curl -X POST http://localhost:3004/predict \
-  -F "entries={\"clip\": {\"image\": {}}}" \
+  -F "entries={\"clip\": {\"textual\": {}, \"visual\": {}}}" \
   -F "image=@photo.jpg"
 
-# Request for unknown type (routed to defaultBackend)
+# Request for CLIP textual only
 curl -X POST http://localhost:3004/predict \
-  -F "entries={\"ocr\": {\"image\": {}}}" \
+  -F "entries={\"clip\": {\"textual\": {}}}" \
+  -F "text=cat on a sofa"
+
+# Request for grouped OCR (types stay together on one backend)
+curl -X POST http://localhost:3004/predict \
+  -F "entries={\"ocr\": {\"detection\": {}, \"recognition\": {}}}" \
   -F "image=@document.jpg"
 ```
 
@@ -249,7 +277,7 @@ curl -X POST http://localhost:3004/predict \
    ```bash
    curl http://localhost:3004/ping
    ```
-   - Returns "pong" if all types have healthy backends
+   - Returns "pong" if all routed tasks/model types have healthy backends
    - Returns 503 if any backend is unhealthy
 
 2. View individual backend health status:
@@ -296,22 +324,23 @@ immich_ml_proxy/
 ## Architecture
 
 - **Configuration**: Thread-safe singleton configuration manager with file persistence and health status tracking
-- **Proxy**: Handles request parsing, type-based grouping, round-robin load balancing, and concurrent forwarding to backends
+- **Proxy**: Handles request parsing, task-aware grouping/splitting, round-robin load balancing, and concurrent forwarding to backends
 - **Health Monitoring**: Continuous health checking with automatic status updates and failover logic
 - **Handlers**: HTTP endpoint handlers for configuration, prediction, health monitoring, and debugging
 - **Debug**: Comprehensive request/response recording with configurable retention
 - **Middleware**: Debug middleware that captures all HTTP traffic when enabled
 
 **Routing Logic**:
-1. Parse request entries and group by type
-2. For each type, look up routing in `taskRouting`
-3. If no routing found, use `defaultBackend`
-4. Select backend using round-robin from healthy backends
-5. If no healthy backends, fall back to all backends
-6. Forward request and update health status based on response
+1. Parse request entries and normalize task names such as `facial_recognition` → `facial-recognition`
+2. Keep `facial-recognition` and `ocr` grouped by task so dependent sub-types stay together
+3. Split `clip` into `textual` / `visual` dispatch groups for whichever model types are present
+4. Route split CLIP groups with `modelTypeRouting`, otherwise use `taskRouting`
+5. Fall back to `defaultBackend` when no explicit task route exists
+6. Forward each dispatch group and merge split-task responses back together
 
 **Health Check Logic**:
 1. Check all backends in parallel via `/ping` endpoint
 2. Verify `defaultBackend` is healthy (required for non-routed types)
-3. Verify each type in `taskRouting` has at least one healthy backend
-4. Return healthy only if all conditions are met
+3. Verify each task in `taskRouting` has at least one healthy backend
+4. Verify each configured CLIP `modelTypeRouting` backend is healthy
+5. Return healthy only if all conditions are met

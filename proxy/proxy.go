@@ -4,9 +4,11 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
+	"immich_ml_proxy/tasks"
 	"io"
 	"mime/multipart"
 	"net/http"
+	"net/textproto"
 	"sync"
 	"time"
 )
@@ -19,7 +21,7 @@ type BackendStatus struct {
 
 // RoundRobinBalancer implements round-robin load balancing
 type RoundRobinBalancer struct {
-	mu        sync.Mutex
+	mu              sync.Mutex
 	roundRobinIndex map[string]int // type -> current index
 }
 
@@ -82,15 +84,7 @@ func ForwardRequest(backendURL string, method string, path string, header http.H
 		return nil, err
 	}
 
-	// Copy headers, excluding hop-by-hop headers
-	for key, values := range header {
-		if key == "Host" || key == "Content-Length" {
-			continue
-		}
-		for _, value := range values {
-			req.Header.Add(key, value)
-		}
-	}
+	copyForwardHeaders(req, header, "")
 
 	return client.Do(req)
 }
@@ -149,11 +143,11 @@ func ParseEntriesFromRequest(r *http.Request) (map[string]interface{}, error) {
 
 // ExtractTaskTypes extracts task types from the entries map
 func ExtractTaskTypes(entries map[string]interface{}) []string {
-	tasks := make([]string, 0, len(entries))
+	taskNames := make([]string, 0, len(entries))
 	for task := range entries {
-		tasks = append(tasks, task)
+		taskNames = append(taskNames, tasks.NormalizeTaskName(task))
 	}
-	return tasks
+	return taskNames
 }
 
 // Entry represents a single inference entry with task and type information
@@ -164,6 +158,17 @@ type Entry struct {
 	EntryData interface{}
 	// Index in the original order
 	Index int
+}
+
+// DispatchGroup describes one outbound predict request.
+// Grouped tasks keep all dependent types together, while split tasks send one
+// request per type and merge the responses back together later.
+type DispatchGroup struct {
+	Key     string
+	Task    string
+	Type    string
+	Entries []Entry
+	Split   bool
 }
 
 // ParseEntries parses entries and returns a flattened list with task, type, and order information
@@ -177,9 +182,10 @@ func ParseEntries(entries map[string]interface{}) ([]Entry, error) {
 			return nil, fmt.Errorf("invalid types structure for task: %s", task)
 		}
 
+		normalizedTask := tasks.NormalizeTaskName(task)
 		for typeKey, typeValue := range typesMap {
 			result = append(result, Entry{
-				Task:      task,
+				Task:      normalizedTask,
 				Type:      typeKey,
 				EntryData: typeValue,
 				Index:     index,
@@ -207,6 +213,38 @@ func GroupEntriesByTask(entries []Entry) map[string][]Entry {
 		grouped[entry.Task] = append(grouped[entry.Task], entry)
 	}
 	return grouped
+}
+
+// BuildDispatchGroups determines how each task should be forwarded.
+// Most tasks stay grouped so dependent types are evaluated together.
+// CLIP is split by whichever model types are present in the request, so
+// textual/visual can target different backends or be sent independently.
+func BuildDispatchGroups(entries []Entry) []DispatchGroup {
+	groupedByTask := GroupEntriesByTask(entries)
+	var groups []DispatchGroup
+
+	for taskName, taskEntries := range groupedByTask {
+		if tasks.ShouldSplitTask(taskName) {
+			for typeName, typeEntries := range GroupEntriesByType(taskEntries) {
+				groups = append(groups, DispatchGroup{
+					Key:     taskName + ":" + typeName,
+					Task:    taskName,
+					Type:    typeName,
+					Entries: typeEntries,
+					Split:   true,
+				})
+			}
+			continue
+		}
+
+		groups = append(groups, DispatchGroup{
+			Key:     taskName,
+			Task:    taskName,
+			Entries: taskEntries,
+		})
+	}
+
+	return groups
 }
 
 // BuildEntriesForType builds the entries JSON structure for a specific type
@@ -243,6 +281,14 @@ func BuildEntriesForTask(entries []Entry) (map[string]interface{}, error) {
 	return result, nil
 }
 
+// BuildEntriesForDispatchGroup builds the payload for one outbound request.
+func BuildEntriesForDispatchGroup(group DispatchGroup) (map[string]interface{}, error) {
+	if group.Split {
+		return BuildEntriesForType(group.Entries)
+	}
+	return BuildEntriesForTask(group.Entries)
+}
+
 // GetBackendURLForType determines the backend URL for a specific type
 // It checks if any entry of this type has a task with specific routing
 func GetBackendURLForType(entries []Entry, getBackendURL func(task string) string) string {
@@ -264,9 +310,11 @@ func ForwardPredictRequest(backendURL string, r *http.Request) (*http.Response, 
 
 	targetURL := backendURL + "/predict"
 
-	// Parse multipart form to access form data
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		return nil, err
+	// Parse the incoming form once before concurrent forwarding begins.
+	if r.MultipartForm == nil {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			return nil, err
+		}
 	}
 
 	// Reconstruct multipart form
@@ -282,23 +330,8 @@ func ForwardPredictRequest(backendURL string, r *http.Request) (*http.Response, 
 		}
 	}
 
-	// Copy form files
-	for key, files := range r.MultipartForm.File {
-		for _, fileHeader := range files {
-			file, err := fileHeader.Open()
-			if err != nil {
-				return nil, err
-			}
-			defer file.Close()
-
-			part, err := writer.CreateFormFile(key, fileHeader.Filename)
-			if err != nil {
-				return nil, err
-			}
-			if _, err := io.Copy(part, file); err != nil {
-				return nil, err
-			}
-		}
+	if err := copyMultipartFiles(writer, r.MultipartForm.File); err != nil {
+		return nil, err
 	}
 
 	if err := writer.Close(); err != nil {
@@ -310,9 +343,7 @@ func ForwardPredictRequest(backendURL string, r *http.Request) (*http.Response, 
 		return nil, err
 	}
 
-	// Copy headers
-	req.Header = r.Header.Clone()
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	copyForwardHeaders(req, r.Header, writer.FormDataContentType())
 
 	return client.Do(req)
 }
@@ -335,9 +366,11 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 		return nil, nil, err
 	}
 
-	// Parse original multipart form to get files
-	if err := r.ParseMultipartForm(32 << 20); err != nil {
-		return nil, nil, err
+	// Parse the incoming form once before concurrent forwarding begins.
+	if r.MultipartForm == nil {
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			return nil, nil, err
+		}
 	}
 
 	// Copy all form values (text fields, excluding entries which is already written)
@@ -352,23 +385,8 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 		}
 	}
 
-	// Copy all form files (image, etc.)
-	for key, files := range r.MultipartForm.File {
-		for _, fileHeader := range files {
-			file, err := fileHeader.Open()
-			if err != nil {
-				return nil, nil, err
-			}
-			defer file.Close()
-
-			part, err := writer.CreateFormFile(key, fileHeader.Filename)
-			if err != nil {
-				return nil, nil, err
-			}
-			if _, err := io.Copy(part, file); err != nil {
-				return nil, nil, err
-			}
-		}
+	if err := copyMultipartFiles(writer, r.MultipartForm.File); err != nil {
+		return nil, nil, err
 	}
 
 	if err := writer.Close(); err != nil {
@@ -383,9 +401,7 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 		return nil, nil, err
 	}
 
-	// Copy headers
-	req.Header = r.Header.Clone()
-	req.Header.Set("Content-Type", writer.FormDataContentType())
+	copyForwardHeaders(req, r.Header, writer.FormDataContentType())
 
 	resp, err := client.Do(req)
 	if err != nil {
@@ -393,4 +409,63 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 	}
 
 	return resp, bodyBytes, nil
+}
+
+func copyForwardHeaders(req *http.Request, src http.Header, contentType string) {
+	req.Header = make(http.Header, len(src))
+	for key, values := range src {
+		switch http.CanonicalHeaderKey(key) {
+		case "Content-Length", "Content-Type", "Host":
+			continue
+		}
+		copiedValues := make([]string, len(values))
+		copy(copiedValues, values)
+		req.Header[key] = copiedValues
+	}
+
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+}
+
+func copyMultipartFiles(writer *multipart.Writer, files map[string][]*multipart.FileHeader) error {
+	for fieldName, fileHeaders := range files {
+		for _, fileHeader := range fileHeaders {
+			if err := copyMultipartFile(writer, fieldName, fileHeader); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+func copyMultipartFile(writer *multipart.Writer, fieldName string, fileHeader *multipart.FileHeader) error {
+	file, err := fileHeader.Open()
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+
+	var part io.Writer
+	if len(fileHeader.Header) > 0 {
+		part, err = writer.CreatePart(cloneMIMEHeader(fileHeader.Header))
+	} else {
+		part, err = writer.CreateFormFile(fieldName, fileHeader.Filename)
+	}
+	if err != nil {
+		return err
+	}
+
+	_, err = io.Copy(part, file)
+	return err
+}
+
+func cloneMIMEHeader(header textproto.MIMEHeader) textproto.MIMEHeader {
+	cloned := make(textproto.MIMEHeader, len(header))
+	for key, values := range header {
+		copiedValues := make([]string, len(values))
+		copy(copiedValues, values)
+		cloned[key] = copiedValues
+	}
+	return cloned
 }

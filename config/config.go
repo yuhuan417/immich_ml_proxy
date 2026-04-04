@@ -2,6 +2,7 @@ package config
 
 import (
 	"encoding/json"
+	"immich_ml_proxy/tasks"
 	"os"
 	"sync"
 	"time"
@@ -27,16 +28,17 @@ type BackendHealth struct {
 }
 
 type Config struct {
-		DefaultBackend   string            `json:"defaultBackend"`
-		Backends         []Backend         `json:"backends"`
-		TaskRouting      map[string]string `json:"taskRouting"` // task -> backend name mapping
-		ModelTypeRouting map[string]string `json:"modelTypeRouting"` // modelType -> backend name mapping (for clip: textual, visual)
-		Health           map[string]BackendHealth `json:"-"` // backend name -> health status
-		mu               sync.RWMutex
-	}
+	DefaultBackend   string            `json:"defaultBackend"`
+	Backends         []Backend         `json:"backends"`
+	TaskRouting      map[string]string `json:"taskRouting"`      // task -> backend name mapping
+	ModelTypeRouting map[string]string `json:"modelTypeRouting"` // modelType -> backend name mapping (for clip: textual, visual)
+	Health           map[string]BackendHealth `json:"-"`         // backend name -> health status
+	mu               sync.RWMutex
+}
+
 var (
-	instance *Config
-	once     sync.Once
+	instance   *Config
+	once       sync.Once
 	configFile = "config.json"
 )
 
@@ -71,8 +73,15 @@ func (c *Config) loadFromFile() {
 
 	c.DefaultBackend = cfg.DefaultBackend
 	c.Backends = cfg.Backends
-	c.TaskRouting = cfg.TaskRouting
+	c.TaskRouting = normalizeTaskRouting(cfg.TaskRouting)
 	c.ModelTypeRouting = cfg.ModelTypeRouting
+
+	if c.TaskRouting == nil {
+		c.TaskRouting = make(map[string]string)
+	}
+	if c.ModelTypeRouting == nil {
+		c.ModelTypeRouting = make(map[string]string)
+	}
 }
 
 func (c *Config) Save() error {
@@ -90,6 +99,8 @@ func (c *Config) Save() error {
 func (c *Config) GetBackendURL(task string) string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
+
+	task = tasks.NormalizeTaskName(task)
 
 	if backendName, ok := c.TaskRouting[task]; ok {
 		for _, backend := range c.Backends {
@@ -122,6 +133,15 @@ func (c *Config) GetAllBackendURLs() []string {
 	return urls
 }
 
+func (c *Config) GetBackends() []Backend {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	backends := make([]Backend, len(c.Backends))
+	copy(backends, c.Backends)
+	return backends
+}
+
 func (c *Config) AddBackend(name, url string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -148,6 +168,11 @@ func (c *Config) RemoveBackend(name string) {
 					delete(c.TaskRouting, task)
 				}
 			}
+			for modelType, backendName := range c.ModelTypeRouting {
+				if backendName == name {
+					delete(c.ModelTypeRouting, modelType)
+				}
+			}
 			// Reset default backend if needed
 			if c.DefaultBackend == name {
 				c.DefaultBackend = ""
@@ -160,13 +185,32 @@ func (c *Config) RemoveBackend(name string) {
 func (c *Config) SetTaskRouting(task, backendName string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.TaskRouting[task] = backendName
+	c.TaskRouting[tasks.NormalizeTaskName(task)] = backendName
 }
 
 func (c *Config) SetDefaultBackend(name string) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	c.DefaultBackend = name
+}
+
+func (c *Config) Replace(defaultBackend string, backends []Backend, taskRouting map[string]string, modelTypeRouting map[string]string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	backendsCopy := make([]Backend, len(backends))
+	copy(backendsCopy, backends)
+
+	taskRoutingCopy := normalizeTaskRouting(taskRouting)
+	modelTypeRoutingCopy := make(map[string]string, len(modelTypeRouting))
+	for modelType, backendName := range modelTypeRouting {
+		modelTypeRoutingCopy[modelType] = backendName
+	}
+
+	c.DefaultBackend = defaultBackend
+	c.Backends = backendsCopy
+	c.TaskRouting = taskRoutingCopy
+	c.ModelTypeRouting = modelTypeRoutingCopy
 }
 
 func (c *Config) ToJSON() ([]byte, error) {
@@ -182,7 +226,7 @@ func (c *Config) ToJSON() ([]byte, error) {
 	}{
 		DefaultBackend:   c.DefaultBackend,
 		Backends:         c.Backends,
-		TaskRouting:      c.TaskRouting,
+		TaskRouting:      normalizeTaskRouting(c.TaskRouting),
 		ModelTypeRouting: c.ModelTypeRouting,
 	}
 
@@ -232,16 +276,15 @@ func (c *Config) GetAllHealthStatus() map[string]BackendHealth {
 	return result
 }
 
-// GetBackendsByType returns backends that handle the specified type
-func (c *Config) GetBackendsByType(typeName string) []Backend {
+// GetBackendsByTask returns backends that handle the specified task.
+func (c *Config) GetBackendsByTask(taskName string) []Backend {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Check if this type has a specific routing in taskRouting
-	backendName, hasRouting := c.TaskRouting[typeName]
+	taskName = tasks.NormalizeTaskName(taskName)
+	backendName, hasRouting := c.TaskRouting[taskName]
 
 	if hasRouting {
-		// Return the specific backend for this type
 		for _, backend := range c.Backends {
 			if backend.Name == backendName {
 				return []Backend{backend}
@@ -249,51 +292,61 @@ func (c *Config) GetBackendsByType(typeName string) []Backend {
 		}
 	}
 
-	// No specific routing, return empty (type not supported)
 	return []Backend{}
 }
 
-// GetHealthyBackendsByType returns healthy backends that handle the specified type
-func (c *Config) GetHealthyBackendsByType(typeName string) []Backend {
+// GetBackendsByType is kept as a compatibility wrapper for older callers.
+func (c *Config) GetBackendsByType(typeName string) []Backend {
+	return c.GetBackendsByTask(typeName)
+}
+
+// GetHealthyBackendsByTask returns healthy backends that handle the specified task.
+func (c *Config) GetHealthyBackendsByTask(taskName string) []Backend {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	// Check if this type has a specific routing in taskRouting
-	backendName, hasRouting := c.TaskRouting[typeName]
+	taskName = tasks.NormalizeTaskName(taskName)
+	backendName, hasRouting := c.TaskRouting[taskName]
 
 	if hasRouting {
-		// Check if the specific backend is healthy
 		for _, backend := range c.Backends {
 			if backend.Name == backendName {
 				if health, ok := c.Health[backend.Name]; ok && health.Status == HealthStatusHealthy {
 					return []Backend{backend}
 				}
-				// Backend exists but is not healthy
 				return []Backend{}
 			}
 		}
 	}
 
-	// No specific routing or backend not found
 	return []Backend{}
 }
 
-// GetAllTypes returns all unique types from taskRouting
-// Note: This doesn't include types handled by defaultBackend, as those are unknown
-func (c *Config) GetAllTypes() []string {
+// GetHealthyBackendsByType is kept as a compatibility wrapper for older callers.
+func (c *Config) GetHealthyBackendsByType(typeName string) []Backend {
+	return c.GetHealthyBackendsByTask(typeName)
+}
+
+// GetAllTasks returns all tasks with explicit task-level routing.
+func (c *Config) GetAllTasks() []string {
 	c.mu.RLock()
 	defer c.mu.RUnlock()
 
-	typeMap := make(map[string]bool)
+	taskMap := make(map[string]bool)
 	for task := range c.TaskRouting {
-		typeMap[task] = true
+		taskMap[tasks.NormalizeTaskName(task)] = true
 	}
 
 	var result []string
-	for t := range typeMap {
+	for t := range taskMap {
 		result = append(result, t)
 	}
 	return result
+}
+
+// GetAllTypes is kept as a compatibility wrapper for older callers.
+func (c *Config) GetAllTypes() []string {
+	return c.GetAllTasks()
 }
 
 // GetDefaultBackend returns the default backend
@@ -307,6 +360,19 @@ func (c *Config) GetDefaultBackend() *Backend {
 
 	for _, backend := range c.Backends {
 		if backend.Name == c.DefaultBackend {
+			return &backend
+		}
+	}
+	return nil
+}
+
+// GetBackendByName returns a configured backend by name.
+func (c *Config) GetBackendByName(name string) *Backend {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	for _, backend := range c.Backends {
+		if backend.Name == name {
 			return &backend
 		}
 	}
@@ -328,4 +394,28 @@ func (c *Config) GetBackendByModelType(modelType string) *Backend {
 	}
 
 	return nil
+}
+
+// GetAllModelTypes returns all model types with explicit routing.
+func (c *Config) GetAllModelTypes() []string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	var result []string
+	for modelType := range c.ModelTypeRouting {
+		result = append(result, modelType)
+	}
+	return result
+}
+
+func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
+	if taskRouting == nil {
+		return make(map[string]string)
+	}
+
+	normalized := make(map[string]string, len(taskRouting))
+	for task, backendName := range taskRouting {
+		normalized[tasks.NormalizeTaskName(task)] = backendName
+	}
+	return normalized
 }

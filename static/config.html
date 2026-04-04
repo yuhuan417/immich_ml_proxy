@@ -216,7 +216,7 @@
     <div class="container">
         <div class="header">
             <h1>🚀 Immich ML Proxy Configuration</h1>
-            <p>Manage ML backends and task routing</p>
+            <p>Manage grouped task routing and CLIP split routing</p>
         </div>
 
         <div class="content">
@@ -245,12 +245,13 @@
 
             <div class="section">
                 <h2>Task Routing</h2>
+                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Grouped tasks stay intact when forwarded. Use this for tasks like <code>facial-recognition</code> and <code>ocr</code>, where sub-types depend on each other.</p>
                 <div id="routingList" class="backend-list"></div>
                 <div class="routing-item">
-                    <input type="text" id="newTaskName" list="taskSuggestions" placeholder="Task name (e.g., facial_recognition)">
+                    <input type="text" id="newTaskName" list="taskSuggestions" placeholder="Task name (e.g., facial-recognition)">
                     <datalist id="taskSuggestions">
                         <option value="clip">
-                        <option value="facial_recognition">
+                        <option value="facial-recognition">
                         <option value="ocr">
                     </datalist>
                     <select id="newTaskBackend">
@@ -261,8 +262,8 @@
             </div>
 
             <div class="section">
-                <h2>ModelType Routing (for CLIP)</h2>
-                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">Configure routing for CLIP model types (textual/visual)</p>
+                <h2>CLIP ModelType Routing</h2>
+                <p style="color: #666; font-size: 14px; margin-bottom: 15px;">CLIP is the only task that is split by sub-type. <code>textual</code> and <code>visual</code> may arrive together or independently, and each present sub-type is routed on its own. Missing routes fall back to the task backend and then the default backend.</p>
                 <div id="modelTypeRoutingList" class="backend-list"></div>
                 <div class="routing-item">
                     <select id="newModelType">

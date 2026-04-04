@@ -7,6 +7,7 @@ import (
 	"immich_ml_proxy/config"
 	"immich_ml_proxy/debug"
 	"immich_ml_proxy/proxy"
+	"immich_ml_proxy/tasks"
 	"io"
 	"net/http"
 	"sync"
@@ -42,20 +43,21 @@ func RootHandler(c *gin.Context) {
 </html>`))
 }
 
-// PingHandler handles GET /ping - checks health status of all backends and returns "pong" if each type has at least one healthy backend
+// PingHandler handles GET /ping - checks health status of all backends and returns "pong" if each routed task/model type has a healthy backend
 func PingHandler(c *gin.Context) {
 	backendURLs := cfg.GetAllBackendURLs()
 	if len(backendURLs) == 0 {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
+	backends := cfg.GetBackends()
 
 	var wg sync.WaitGroup
 	statuses := make([]proxy.BackendStatus, len(backendURLs))
 	statusesMu := sync.Mutex{}
 
 	// Check health of all backends in parallel
-	for i, backend := range cfg.Backends {
+	for i, backend := range backends {
 		wg.Add(1)
 		go func(idx int, b config.Backend) {
 			defer wg.Done()
@@ -88,28 +90,41 @@ func PingHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if each type in taskRouting has at least one healthy backend
-	allTypes := cfg.GetAllTypes()
-	allTypesHealthy := true
+	// Check if each routed task has at least one healthy backend
+	allTasksHealthy := true
 
-	for _, typeName := range allTypes {
-		healthyBackends := cfg.GetHealthyBackendsByType(typeName)
+	for _, taskName := range cfg.GetAllTasks() {
+		healthyBackends := cfg.GetHealthyBackendsByTask(taskName)
 		if len(healthyBackends) == 0 {
-			allTypesHealthy = false
+			allTasksHealthy = false
 			break
 		}
 	}
 
-	if allTypesHealthy {
-		c.Data(http.StatusOK, "text/plain", []byte("pong"))
-	} else {
+	if !allTasksHealthy {
 		c.Status(http.StatusServiceUnavailable)
+		return
 	}
+
+	for _, modelType := range cfg.GetAllModelTypes() {
+		backend := cfg.GetBackendByModelType(modelType)
+		if backend == nil {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+		backendHealth := cfg.GetHealthStatus(backend.Name)
+		if backendHealth.Status != config.HealthStatusHealthy {
+			c.Status(http.StatusServiceUnavailable)
+			return
+		}
+	}
+
+	c.Data(http.StatusOK, "text/plain", []byte("pong"))
 }
 
-// PredictHandler handles POST /predict - routes requests by type, merges same-type entries, and preserves order
+// PredictHandler handles POST /predict - groups dependent tasks together and
+// only splits tasks like CLIP whose model types can run independently.
 func PredictHandler(c *gin.Context) {
-	// Parse entries to determine task type
 	entriesMap, err := proxy.ParseEntriesFromRequest(c.Request)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -118,7 +133,6 @@ func PredictHandler(c *gin.Context) {
 		return
 	}
 
-	// Parse entries with task, type, and order information
 	entries, err := proxy.ParseEntries(entriesMap)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -134,124 +148,58 @@ func PredictHandler(c *gin.Context) {
 		return
 	}
 
-	// Group entries by task (e.g., "facial-recognition", "clip", "ocr")
-	// This ensures all sub-entries (detection + recognition) stay together
-	groupedByTask := proxy.GroupEntriesByTask(entries)
-
-	// For each task, build entries and forward to backend
-	taskResults := make(map[string]interface{})
-	taskErrors := make(map[string]error)
+	dispatchGroups := proxy.BuildDispatchGroups(entries)
+	finalResult := make(map[string]interface{})
+	groupErrors := make(map[string]error)
 	var resultMutex sync.Mutex
 	var wg sync.WaitGroup
 
-	for taskName, taskEntries := range groupedByTask {
+	for _, group := range dispatchGroups {
 		wg.Add(1)
-		go func(t string, te []proxy.Entry) {
+		go func(g proxy.DispatchGroup) {
 			defer wg.Done()
 
-			// Build entries for this task (keeps all sub-types together)
-			entriesForTask, err := proxy.BuildEntriesForTask(te)
+			entriesForGroup, err := proxy.BuildEntriesForDispatchGroup(g)
 			if err != nil {
 				resultMutex.Lock()
-				taskErrors[t] = err
+				groupErrors[g.Key] = err
 				resultMutex.Unlock()
 				return
 			}
 
-			// Step 1: Try modelType routing first (for clip: textual/visual)
-			var selectedBackend *config.Backend
-			for _, entry := range te {
-				// Try to route by modelType (e.g., textual, visual)
-				backend := cfg.GetBackendByModelType(entry.Type)
-				if backend != nil {
-					selectedBackend = backend
-					break
-				}
-			}
-
-			// Step 2: If no modelType-specific backend found, try task-based routing
-			if selectedBackend == nil {
-				// Check if this task has specific routing in taskRouting
-				healthyBackends := cfg.GetHealthyBackendsByType(t)
-				allBackends := cfg.GetBackendsByType(t)
-
-				if len(allBackends) > 0 {
-					// Use round-robin to select backend
-					var backendList []string
-					if len(healthyBackends) > 0 {
-						// Prefer healthy backends
-						for _, b := range healthyBackends {
-							backendList = append(backendList, b.URL)
-						}
-					} else {
-						// No healthy backends, use all backends
-						for _, b := range allBackends {
-							backendList = append(backendList, b.URL)
-						}
-					}
-
-					// Use round-robin to select backend
-					selectedURL := proxy.GetNextBackend(t, backendList)
-					if selectedURL != "" {
-						// Find backend by URL
-						for _, b := range allBackends {
-							if b.URL == selectedURL {
-								selectedBackend = &b
-								break
-							}
-						}
-					}
-				}
-			}
-
-			// Step 3: If still no backend found, fallback to default backend
-			if selectedBackend == nil {
-				if cfg.DefaultBackend != "" {
-					for _, b := range cfg.Backends {
-						if b.Name == cfg.DefaultBackend {
-							selectedBackend = &b
-							break
-						}
-					}
-				}
-				if selectedBackend == nil {
-					resultMutex.Lock()
-					taskErrors[t] = fmt.Errorf("no backend available for task: %s", t)
-					resultMutex.Unlock()
-					return
-				}
-			}
-
-			// Create request with entries for this task
-			entriesJSON, err := json.Marshal(entriesForTask)
+			selectedBackend, err := selectBackendForDispatchGroup(g)
 			if err != nil {
 				resultMutex.Lock()
-				taskErrors[t] = err
+				groupErrors[g.Key] = err
 				resultMutex.Unlock()
 				return
 			}
 
-			// Forward request to backend
+			entriesJSON, err := json.Marshal(entriesForGroup)
+			if err != nil {
+				resultMutex.Lock()
+				groupErrors[g.Key] = err
+				resultMutex.Unlock()
+				return
+			}
+
 			resp, bodyBytes, err := proxy.ForwardPredictRequestWithType(selectedBackend.URL, c.Request, string(entriesJSON))
 			if err != nil {
-				// Record error for debug
 				if debug.GetInstance().IsEnabled() {
 					recordID := debug.GenerateID()
 					debug.GetInstance().RecordOutgoingRequest(recordID, "POST", selectedBackend.URL+"/predict", c.Request.Header, bodyBytes)
 					debug.GetInstance().RecordError(recordID, err)
 				}
 
-				// Mark backend as unhealthy
 				cfg.SetHealthStatus(selectedBackend.Name, config.HealthStatusUnhealthy, err.Error())
 
 				resultMutex.Lock()
-				taskErrors[t] = err
+				groupErrors[g.Key] = err
 				resultMutex.Unlock()
 				return
 			}
 			defer resp.Body.Close()
 
-			// Update health status based on response
 			if resp.StatusCode == http.StatusOK {
 				cfg.SetHealthStatus(selectedBackend.Name, config.HealthStatusHealthy, "")
 			} else {
@@ -260,73 +208,163 @@ func PredictHandler(c *gin.Context) {
 				resp.Body = io.NopCloser(bytes.NewReader(body))
 			}
 
-			// Record outgoing request and response for debug
 			if debug.GetInstance().IsEnabled() {
 				recordID := debug.GenerateID()
 				debug.GetInstance().RecordOutgoingRequest(recordID, "POST", selectedBackend.URL+"/predict", c.Request.Header, bodyBytes)
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body = io.NopCloser(bytes.NewReader(body))
 				debug.GetInstance().RecordOutgoingResponse(recordID, resp.StatusCode, resp.Header, body)
-				// Restore body for subsequent reads
 				resp.Body = io.NopCloser(bytes.NewReader(body))
 			}
 
-			// Read response
 			body, err := io.ReadAll(resp.Body)
 			if err != nil {
 				resultMutex.Lock()
-				taskErrors[t] = err
+				groupErrors[g.Key] = err
 				resultMutex.Unlock()
 				return
 			}
 
 			if resp.StatusCode != http.StatusOK {
 				resultMutex.Lock()
-				taskErrors[t] = fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+				groupErrors[g.Key] = fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
 				resultMutex.Unlock()
 				return
 			}
 
-			// Parse response
 			var result map[string]interface{}
 			if err := json.Unmarshal(body, &result); err != nil {
 				resultMutex.Lock()
-				taskErrors[t] = err
+				groupErrors[g.Key] = err
 				resultMutex.Unlock()
 				return
 			}
 
 			resultMutex.Lock()
-			taskResults[t] = result
+			if err := mergePredictResult(finalResult, result); err != nil {
+				groupErrors[g.Key] = err
+				resultMutex.Unlock()
+				return
+			}
 			resultMutex.Unlock()
-		}(taskName, taskEntries)
+		}(group)
 	}
 
 	wg.Wait()
 
-	// Check for errors
-	if len(taskErrors) > 0 {
+	if len(groupErrors) > 0 {
 		var errMsgs []string
-		for t, err := range taskErrors {
-			errMsgs = append(errMsgs, fmt.Sprintf("task %s: %v", t, err))
+		for groupKey, err := range groupErrors {
+			errMsgs = append(errMsgs, fmt.Sprintf("%s: %v", groupKey, err))
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{
-			"error":  "Failed to process some tasks",
+			"error":  "Failed to process some dispatch groups",
 			"errors": errMsgs,
 		})
 		return
 	}
 
-	// Assemble results - merge all task results into final response
-	finalResult := make(map[string]interface{})
-	for _, result := range taskResults {
-		for key, value := range result.(map[string]interface{}) {
-			finalResult[key] = value
+	c.JSON(http.StatusOK, finalResult)
+}
+
+func selectBackendForDispatchGroup(group proxy.DispatchGroup) (*config.Backend, error) {
+	if group.Split {
+		if backend := cfg.GetBackendByModelType(group.Type); backend != nil {
+			return backend, nil
 		}
 	}
 
-	// Return assembled result
-	c.JSON(http.StatusOK, finalResult)
+	healthyBackends := cfg.GetHealthyBackendsByTask(group.Task)
+	allBackends := cfg.GetBackendsByTask(group.Task)
+
+	if len(allBackends) > 0 {
+		candidates := allBackends
+		if len(healthyBackends) > 0 {
+			candidates = healthyBackends
+		}
+
+		backendList := make([]string, 0, len(candidates))
+		for _, backend := range candidates {
+			backendList = append(backendList, backend.URL)
+		}
+
+		selectedURL := proxy.GetNextBackend(group.Key, backendList)
+		if selectedURL != "" {
+			for _, backend := range candidates {
+				if backend.URL == selectedURL {
+					return &backend, nil
+				}
+			}
+		}
+	}
+
+	if backend := cfg.GetDefaultBackend(); backend != nil {
+		return backend, nil
+	}
+
+	return nil, fmt.Errorf("no backend available for task: %s", group.Task)
+}
+
+func mergePredictResult(dst map[string]interface{}, src map[string]interface{}) error {
+	for taskName, value := range src {
+		srcTaskResult, ok := value.(map[string]interface{})
+		if !ok {
+			if _, exists := dst[taskName]; exists {
+				return fmt.Errorf("duplicate non-object result for task: %s", taskName)
+			}
+			dst[taskName] = value
+			continue
+		}
+
+		existing, exists := dst[taskName]
+		if !exists {
+			dst[taskName] = srcTaskResult
+			continue
+		}
+
+		dstTaskResult, ok := existing.(map[string]interface{})
+		if !ok {
+			return fmt.Errorf("cannot merge object result into non-object task: %s", taskName)
+		}
+
+		for typeName, typeValue := range srcTaskResult {
+			if _, exists := dstTaskResult[typeName]; exists {
+				return fmt.Errorf("duplicate result for task %s type %s", taskName, typeName)
+			}
+			dstTaskResult[typeName] = typeValue
+		}
+	}
+
+	return nil
+}
+
+func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
+	normalized := make(map[string]string)
+	for taskName, backendName := range taskRouting {
+		normalized[tasks.NormalizeTaskName(taskName)] = backendName
+	}
+	return normalized
+}
+
+func validateRoutingBackends(backends []config.Backend, taskRouting map[string]string, modelTypeRouting map[string]string) error {
+	backendNames := make(map[string]struct{}, len(backends))
+	for _, backend := range backends {
+		backendNames[backend.Name] = struct{}{}
+	}
+
+	for taskName, backendName := range taskRouting {
+		if _, exists := backendNames[backendName]; !exists {
+			return fmt.Errorf("task routing for %s references unknown backend %s", taskName, backendName)
+		}
+	}
+
+	for modelType, backendName := range modelTypeRouting {
+		if _, exists := backendNames[backendName]; !exists {
+			return fmt.Errorf("modelType routing for %s references unknown backend %s", modelType, backendName)
+		}
+	}
+
+	return nil
 }
 
 // ConfigGetHandler handles GET /config - returns web configuration UI
@@ -400,11 +438,21 @@ func ConfigPostHandler(c *gin.Context) {
 		return
 	}
 
-	// Update config
-	cfg.DefaultBackend = req.DefaultBackend
-	cfg.Backends = req.Backends
-	cfg.TaskRouting = req.TaskRouting
-	cfg.ModelTypeRouting = req.ModelTypeRouting
+	normalizedTaskRouting := normalizeTaskRouting(req.TaskRouting)
+	modelTypeRouting := req.ModelTypeRouting
+	if modelTypeRouting == nil {
+		modelTypeRouting = make(map[string]string)
+	}
+
+	if err := validateRoutingBackends(req.Backends, normalizedTaskRouting, modelTypeRouting); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
+
+	// Update config atomically so requests do not observe a partially-written config.
+	cfg.Replace(req.DefaultBackend, req.Backends, normalizedTaskRouting, modelTypeRouting)
 
 	// Save to file
 	if err := cfg.Save(); err != nil {
