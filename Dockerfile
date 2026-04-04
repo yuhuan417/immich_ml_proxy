@@ -32,8 +32,8 @@ COPY --from=builder /app/immich_ml_proxy .
 # Copy static files
 COPY --from=builder /app/static ./static
 
-# Expose port
-EXPOSE 8080
+# Expose the app's actual listen port
+EXPOSE 3004
 
 # Set GIN_MODE to release
 ENV GIN_MODE=release
