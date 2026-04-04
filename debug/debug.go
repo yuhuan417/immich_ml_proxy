@@ -3,18 +3,20 @@ package debug
 import (
 	"net/http"
 	"sort"
+	"strings"
 	"sync"
 	"time"
 )
 
 // HTTPRecord represents a single HTTP request/response record
 type HTTPRecord struct {
-	ID        string              `json:"id"`
-	Timestamp time.Time           `json:"timestamp"`
-	Type      string              `json:"type"` // "incoming" or "outgoing"
-	Request   RequestInfo         `json:"request"`
-	Response  ResponseInfo        `json:"response"`
-	Error     string              `json:"error,omitempty"`
+	ID        string       `json:"id"`
+	TraceID   string       `json:"traceId"`
+	Timestamp time.Time    `json:"timestamp"`
+	Type      string       `json:"type"` // "incoming" or "outgoing"
+	Request   RequestInfo  `json:"request"`
+	Response  ResponseInfo `json:"response"`
+	Error     string       `json:"error,omitempty"`
 }
 
 // RequestInfo stores request details
@@ -22,14 +24,14 @@ type RequestInfo struct {
 	Method  string            `json:"method"`
 	URL     string            `json:"url"`
 	Headers map[string]string `json:"headers"`
-	Body    string            `json:"body"`
+	Body    BodyInfo          `json:"body"`
 }
 
 // ResponseInfo stores response details
 type ResponseInfo struct {
 	StatusCode int               `json:"statusCode"`
 	Headers    map[string]string `json:"headers"`
-	Body       string            `json:"body"`
+	Body       BodyInfo          `json:"body"`
 }
 
 // DebugManager manages debug records and settings
@@ -95,22 +97,18 @@ func (dm *DebugManager) RecordIncomingRequest(id string, r *http.Request, body [
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	headers := make(map[string]string)
-	for key, values := range r.Header {
-		if len(values) > 0 {
-			headers[key] = values[0]
-		}
-	}
+	headers := flattenHeaders(r.Header)
 
 	record := HTTPRecord{
 		ID:        id,
+		TraceID:   id,
 		Timestamp: time.Now(),
 		Type:      "incoming",
 		Request: RequestInfo{
 			Method:  r.Method,
 			URL:     r.URL.String(),
 			Headers: headers,
-			Body:    string(body),
+			Body:    BuildBodyInfo(headers["Content-Type"], body),
 		},
 	}
 
@@ -131,24 +129,19 @@ func (dm *DebugManager) RecordIncomingResponse(id string, statusCode int, header
 		return
 	}
 
-	headerMap := make(map[string]string)
-	for key, values := range headers {
-		if len(values) > 0 {
-			headerMap[key] = values[0]
-		}
-	}
+	headerMap := flattenHeaders(headers)
 
 	record.Response = ResponseInfo{
 		StatusCode: statusCode,
 		Headers:    headerMap,
-		Body:       string(body),
+		Body:       BuildBodyInfo(headerMap["Content-Type"], body),
 	}
 
 	dm.records[id] = record
 }
 
 // RecordOutgoingRequest records an outgoing request to backend
-func (dm *DebugManager) RecordOutgoingRequest(id string, method string, url string, headers http.Header, body []byte) {
+func (dm *DebugManager) RecordOutgoingRequest(id string, traceID string, method string, url string, headers http.Header, body []byte) {
 	if !dm.IsEnabled() {
 		return
 	}
@@ -156,22 +149,21 @@ func (dm *DebugManager) RecordOutgoingRequest(id string, method string, url stri
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 
-	headerMap := make(map[string]string)
-	for key, values := range headers {
-		if len(values) > 0 {
-			headerMap[key] = values[0]
-		}
+	headerMap := flattenHeaders(headers)
+	if traceID == "" {
+		traceID = id
 	}
 
 	record := HTTPRecord{
 		ID:        id,
+		TraceID:   traceID,
 		Timestamp: time.Now(),
 		Type:      "outgoing",
 		Request: RequestInfo{
 			Method:  method,
 			URL:     url,
 			Headers: headerMap,
-			Body:    string(body),
+			Body:    BuildBodyInfo(headerMap["Content-Type"], body),
 		},
 	}
 
@@ -192,17 +184,12 @@ func (dm *DebugManager) RecordOutgoingResponse(id string, statusCode int, header
 		return
 	}
 
-	headerMap := make(map[string]string)
-	for key, values := range headers {
-		if len(values) > 0 {
-			headerMap[key] = values[0]
-		}
-	}
+	headerMap := flattenHeaders(headers)
 
 	record.Response = ResponseInfo{
 		StatusCode: statusCode,
 		Headers:    headerMap,
-		Body:       string(body),
+		Body:       BuildBodyInfo(headerMap["Content-Type"], body),
 	}
 
 	dm.records[id] = record
@@ -239,7 +226,7 @@ func (dm *DebugManager) GetRecords() []HTTPRecord {
 
 	// Sort by timestamp
 	sort.Slice(result, func(i, j int) bool {
-		return result[i].Timestamp.Before(result[j].Timestamp)
+		return result[i].Timestamp.After(result[j].Timestamp)
 	})
 
 	return result
@@ -319,4 +306,15 @@ func randomString(length int) string {
 		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
 	}
 	return string(b)
+}
+
+func flattenHeaders(headers http.Header) map[string]string {
+	result := make(map[string]string, len(headers))
+	for key, values := range headers {
+		if len(values) == 0 {
+			continue
+		}
+		result[key] = strings.Join(values, ", ")
+	}
+	return result
 }

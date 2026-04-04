@@ -97,6 +97,7 @@ func DebugMiddleware() gin.HandlerFunc {
 		// Record incoming request
 		recordID := debug.GenerateID()
 		dm.RecordIncomingRequest(recordID, c.Request, body)
+		c.Set("debugTraceID", recordID)
 
 		// Restore request body
 		if len(body) > 0 {
@@ -116,7 +117,11 @@ func DebugMiddleware() gin.HandlerFunc {
 
 		// Record response if not already recorded
 		if !writer.recorded {
-			dm.RecordIncomingResponse(recordID, writer.status, writer.Header(), writer.body.Bytes())
+			var responseBody []byte
+			if writer.body != nil {
+				responseBody = writer.body.Bytes()
+			}
+			dm.RecordIncomingResponse(recordID, writer.status, writer.Header(), responseBody)
 		}
 	}
 }

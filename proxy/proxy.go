@@ -348,9 +348,9 @@ func ForwardPredictRequest(backendURL string, r *http.Request) (*http.Response, 
 	return client.Do(req)
 }
 
-// ForwardPredictRequestWithType forwards the predict request with custom entries JSON
-// Returns response and the actual request body bytes for debug purposes
-func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJSON string) (*http.Response, []byte, error) {
+// ForwardPredictRequestWithType forwards the predict request with custom entries JSON.
+// Returns the response, actual request body bytes, and actual content type for debug purposes.
+func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJSON string) (*http.Response, []byte, string, error) {
 	client := &http.Client{
 		Timeout: 60 * time.Second,
 	}
@@ -363,13 +363,13 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 
 	// Write custom entries
 	if err := writer.WriteField("entries", entriesJSON); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	// Parse the incoming form once before concurrent forwarding begins.
 	if r.MultipartForm == nil {
 		if err := r.ParseMultipartForm(32 << 20); err != nil {
-			return nil, nil, err
+			return nil, nil, "", err
 		}
 	}
 
@@ -380,35 +380,36 @@ func ForwardPredictRequestWithType(backendURL string, r *http.Request, entriesJS
 		}
 		for _, value := range values {
 			if err := writer.WriteField(key, value); err != nil {
-				return nil, nil, err
+				return nil, nil, "", err
 			}
 		}
 	}
 
 	if err := copyMultipartFiles(writer, r.MultipartForm.File); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	if err := writer.Close(); err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
 	// Get body bytes for debug before sending
 	bodyBytes := body.Bytes()
+	contentType := writer.FormDataContentType()
 
 	req, err := http.NewRequest("POST", targetURL, bytes.NewReader(bodyBytes))
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, "", err
 	}
 
-	copyForwardHeaders(req, r.Header, writer.FormDataContentType())
+	copyForwardHeaders(req, r.Header, contentType)
 
 	resp, err := client.Do(req)
 	if err != nil {
-		return nil, bodyBytes, err
+		return nil, bodyBytes, contentType, err
 	}
 
-	return resp, bodyBytes, nil
+	return resp, bodyBytes, contentType, nil
 }
 
 func copyForwardHeaders(req *http.Request, src http.Header, contentType string) {

@@ -153,6 +153,7 @@ func PredictHandler(c *gin.Context) {
 	groupErrors := make(map[string]error)
 	var resultMutex sync.Mutex
 	var wg sync.WaitGroup
+	debugTraceID := c.GetString("debugTraceID")
 
 	for _, group := range dispatchGroups {
 		wg.Add(1)
@@ -183,11 +184,12 @@ func PredictHandler(c *gin.Context) {
 				return
 			}
 
-			resp, bodyBytes, err := proxy.ForwardPredictRequestWithType(selectedBackend.URL, c.Request, string(entriesJSON))
+			resp, bodyBytes, outgoingContentType, err := proxy.ForwardPredictRequestWithType(selectedBackend.URL, c.Request, string(entriesJSON))
+			debugHeaders := cloneHeaderWithContentType(c.Request.Header, outgoingContentType)
 			if err != nil {
 				if debug.GetInstance().IsEnabled() {
 					recordID := debug.GenerateID()
-					debug.GetInstance().RecordOutgoingRequest(recordID, "POST", selectedBackend.URL+"/predict", c.Request.Header, bodyBytes)
+					debug.GetInstance().RecordOutgoingRequest(recordID, debugTraceID, "POST", selectedBackend.URL+"/predict", debugHeaders, bodyBytes)
 					debug.GetInstance().RecordError(recordID, err)
 				}
 
@@ -210,7 +212,7 @@ func PredictHandler(c *gin.Context) {
 
 			if debug.GetInstance().IsEnabled() {
 				recordID := debug.GenerateID()
-				debug.GetInstance().RecordOutgoingRequest(recordID, "POST", selectedBackend.URL+"/predict", c.Request.Header, bodyBytes)
+				debug.GetInstance().RecordOutgoingRequest(recordID, debugTraceID, "POST", selectedBackend.URL+"/predict", debugHeaders, bodyBytes)
 				body, _ := io.ReadAll(resp.Body)
 				resp.Body = io.NopCloser(bytes.NewReader(body))
 				debug.GetInstance().RecordOutgoingResponse(recordID, resp.StatusCode, resp.Header, body)
@@ -265,6 +267,21 @@ func PredictHandler(c *gin.Context) {
 	}
 
 	c.JSON(http.StatusOK, finalResult)
+}
+
+func cloneHeaderWithContentType(src http.Header, contentType string) http.Header {
+	cloned := make(http.Header, len(src))
+	for key, values := range src {
+		copiedValues := make([]string, len(values))
+		copy(copiedValues, values)
+		cloned[key] = copiedValues
+	}
+
+	if contentType != "" {
+		cloned.Set("Content-Type", contentType)
+	}
+
+	return cloned
 }
 
 func selectBackendForDispatchGroup(group proxy.DispatchGroup) (*config.Backend, error) {

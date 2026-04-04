@@ -5,76 +5,124 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Immich ML Proxy - Debug</title>
     <style>
+        :root {
+            --bg: #07111f;
+            --bg-accent: #0f3a67;
+            --panel: #ffffff;
+            --panel-muted: #f4f7fb;
+            --panel-border: #d8e1ee;
+            --text: #162033;
+            --text-muted: #5c6b82;
+            --accent: #ff6b35;
+            --accent-strong: #db4c1c;
+            --success-bg: #dff5e8;
+            --success-text: #15603a;
+            --error-bg: #fde7e7;
+            --error-text: #8c2424;
+            --pending-bg: #fff2d9;
+            --pending-text: #8a5a00;
+            --incoming-bg: #e6f4ea;
+            --incoming-text: #1e6b3b;
+            --outgoing-bg: #e7f0ff;
+            --outgoing-text: #1953a6;
+            --shadow: 0 24px 80px rgba(4, 15, 29, 0.24);
+        }
+
         * {
             margin: 0;
             padding: 0;
             box-sizing: border-box;
         }
+
         body {
-            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+            font-family: "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+            background:
+                radial-gradient(circle at top right, rgba(255, 107, 53, 0.28), transparent 26%),
+                linear-gradient(135deg, var(--bg) 0%, #0b2542 48%, var(--bg-accent) 100%);
             min-height: 100vh;
             padding: 20px;
+            color: var(--text);
         }
+
         .container {
-            max-width: 1400px;
+            max-width: 1480px;
             margin: 0 auto;
-            background: white;
-            border-radius: 12px;
-            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            background: rgba(255, 255, 255, 0.96);
+            border-radius: 20px;
+            box-shadow: var(--shadow);
             overflow: hidden;
+            backdrop-filter: blur(10px);
         }
+
         .header {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
             padding: 30px;
-            text-align: center;
+            background:
+                radial-gradient(circle at top left, rgba(255, 255, 255, 0.14), transparent 24%),
+                linear-gradient(135deg, #091727 0%, #12335a 56%, #ed6a2d 100%);
+            color: white;
         }
+
         .header h1 {
-            font-size: 28px;
+            font-size: 30px;
             margin-bottom: 8px;
         }
+
         .header p {
-            opacity: 0.9;
-            font-size: 14px;
+            max-width: 760px;
+            line-height: 1.5;
+            color: rgba(255, 255, 255, 0.82);
         }
+
         .content {
-            padding: 30px;
+            padding: 28px;
         }
+
         .controls {
             display: flex;
-            gap: 15px;
-            align-items: center;
-            margin-bottom: 20px;
             flex-wrap: wrap;
+            gap: 14px;
+            align-items: center;
+            margin-bottom: 22px;
         }
+
+        .control-card {
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            padding: 14px 16px;
+            background: var(--panel-muted);
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+        }
+
         .toggle-switch {
             display: flex;
             align-items: center;
             gap: 10px;
         }
+
         .switch {
             position: relative;
             display: inline-block;
-            width: 60px;
+            width: 58px;
             height: 30px;
         }
+
         .switch input {
             opacity: 0;
             width: 0;
             height: 0;
         }
+
         .slider {
             position: absolute;
             cursor: pointer;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background-color: #ccc;
-            transition: .4s;
-            border-radius: 30px;
+            inset: 0;
+            background: #c4cfdd;
+            transition: .25s;
+            border-radius: 999px;
         }
+
         .slider:before {
             position: absolute;
             content: "";
@@ -82,244 +130,515 @@
             width: 22px;
             left: 4px;
             bottom: 4px;
-            background-color: white;
-            transition: .4s;
+            background: white;
+            transition: .25s;
             border-radius: 50%;
         }
+
         input:checked + .slider {
-            background-color: #f5576c;
+            background: var(--accent);
         }
+
         input:checked + .slider:before {
-            transform: translateX(30px);
+            transform: translateX(28px);
         }
+
         .form-group {
             display: flex;
             align-items: center;
             gap: 10px;
         }
+
         .form-group label {
-            color: #555;
-            font-weight: 500;
+            font-weight: 600;
+            color: var(--text-muted);
         }
+
         .form-group input[type="number"] {
-            width: 100px;
-            padding: 8px 12px;
-            border: 2px solid #e0e0e0;
-            border-radius: 8px;
+            width: 110px;
+            padding: 10px 12px;
+            border: 1px solid var(--panel-border);
+            border-radius: 10px;
             font-size: 14px;
+            background: white;
         }
+
         .btn {
-            padding: 10px 20px;
             border: none;
-            border-radius: 8px;
-            cursor: pointer;
+            border-radius: 10px;
+            padding: 11px 18px;
             font-size: 14px;
-            font-weight: 500;
-            transition: all 0.3s;
+            font-weight: 600;
+            cursor: pointer;
+            transition: transform 0.18s ease, box-shadow 0.18s ease, background 0.18s ease;
         }
-        .btn-primary {
-            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
-            color: white;
-        }
-        .btn-secondary {
-            background: #6c757d;
-            color: white;
-        }
-        .btn-danger {
-            background: #dc3545;
-            color: white;
-        }
+
         .btn:hover {
-            transform: translateY(-2px);
-            box-shadow: 0 5px 20px rgba(0, 0, 0, 0.2);
+            transform: translateY(-1px);
+            box-shadow: 0 10px 24px rgba(18, 31, 51, 0.12);
         }
+
+        .btn-primary {
+            background: linear-gradient(135deg, var(--accent) 0%, var(--accent-strong) 100%);
+            color: white;
+        }
+
+        .btn-secondary {
+            background: #e2e8f0;
+            color: var(--text);
+        }
+
+        .btn-danger {
+            background: #bf2525;
+            color: white;
+        }
+
         .stats {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 15px;
-            margin-bottom: 20px;
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+            gap: 14px;
+            margin-bottom: 22px;
         }
+
         .stat-card {
-            background: #f8f9fa;
-            padding: 20px;
-            border-radius: 8px;
-            text-align: center;
+            background: var(--panel-muted);
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 18px;
         }
+
         .stat-card .value {
-            font-size: 32px;
-            font-weight: bold;
-            color: #f5576c;
+            font-size: 30px;
+            font-weight: 700;
+            color: var(--text);
         }
+
         .stat-card .label {
-            color: #666;
-            font-size: 14px;
-            margin-top: 5px;
+            margin-top: 6px;
+            color: var(--text-muted);
+            font-size: 13px;
+            letter-spacing: 0.02em;
         }
-        .records {
-            background: #f8f9fa;
-            border-radius: 8px;
-            overflow: hidden;
-        }
-        .record-item {
-            background: white;
-            border-bottom: 1px solid #e0e0e0;
-            cursor: pointer;
-            transition: background-color 0.2s;
-        }
-        .record-item:hover {
-            background: #f0f0f0;
-        }
-        .record-item:last-child {
-            border-bottom: none;
-        }
-        .record-summary {
-            padding: 15px 20px;
-            display: flex;
+
+        .status-badge,
+        .record-type,
+        .trace-chip,
+        .inline-badge {
+            display: inline-flex;
             align-items: center;
-            gap: 15px;
-        }
-        .record-type {
-            padding: 5px 12px;
-            border-radius: 15px;
+            justify-content: center;
+            padding: 4px 10px;
+            border-radius: 999px;
             font-size: 12px;
-            font-weight: 500;
+            font-weight: 700;
+            letter-spacing: 0.03em;
             text-transform: uppercase;
         }
+
+        .status-badge.enabled,
+        .record-status.success,
+        .trace-status.success {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .status-badge.disabled,
+        .record-status.error,
+        .trace-status.error {
+            background: var(--error-bg);
+            color: var(--error-text);
+        }
+
+        .record-status.pending,
+        .trace-status.pending {
+            background: var(--pending-bg);
+            color: var(--pending-text);
+        }
+
         .record-type.incoming {
-            background: #d4edda;
-            color: #155724;
+            background: var(--incoming-bg);
+            color: var(--incoming-text);
         }
+
         .record-type.outgoing {
-            background: #cce5ff;
-            color: #004085;
+            background: var(--outgoing-bg);
+            color: var(--outgoing-text);
         }
-        .record-info {
-            flex: 1;
-        }
-        .record-info .method {
+
+        .trace-chip {
+            background: #eef3f9;
+            color: var(--text-muted);
+            text-transform: none;
             font-weight: 600;
-            color: #333;
         }
-        .record-info .url {
-            color: #666;
-            font-size: 14px;
+
+        .records {
+            display: grid;
+            gap: 16px;
         }
-        .record-info .timestamp {
-            color: #999;
-            font-size: 12px;
+
+        .trace-item {
+            background: white;
+            border: 1px solid var(--panel-border);
+            border-radius: 18px;
+            overflow: hidden;
+            box-shadow: 0 14px 34px rgba(20, 31, 46, 0.06);
         }
-        .record-status {
-            padding: 5px 12px;
-            border-radius: 15px;
-            font-size: 12px;
-            font-weight: 500;
+
+        .trace-summary {
+            padding: 20px 22px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            gap: 20px;
+            align-items: flex-start;
         }
-        .record-status.success {
-            background: #d4edda;
-            color: #155724;
+
+        .trace-summary:hover {
+            background: #fbfcfe;
         }
-        .record-status.error {
-            background: #f8d7da;
-            color: #721c24;
+
+        .trace-main {
+            flex: 1;
+            min-width: 0;
         }
-        .record-status.pending {
-            background: #fff3cd;
-            color: #856404;
+
+        .trace-topline {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
         }
-        .record-details {
+
+        .trace-request {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: baseline;
+            margin-bottom: 10px;
+        }
+
+        .trace-method {
+            font-weight: 800;
+            font-size: 18px;
+            color: var(--text);
+        }
+
+        .trace-url {
+            font-size: 15px;
+            color: var(--text-muted);
+            word-break: break-all;
+        }
+
+        .trace-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .trace-side {
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
+            align-items: flex-end;
+            flex-shrink: 0;
+        }
+
+        .trace-time {
+            font-size: 13px;
+            color: var(--text-muted);
+        }
+
+        .trace-details {
             display: none;
-            padding: 20px;
-            background: #fafafa;
-            border-top: 1px solid #e0e0e0;
+            padding: 0 22px 22px;
+            background: linear-gradient(180deg, rgba(244, 247, 251, 0.72) 0%, rgba(255, 255, 255, 1) 120px);
+            border-top: 1px solid var(--panel-border);
         }
-        .record-details.show {
+
+        .trace-details.show {
             display: block;
         }
+
+        .trace-flow {
+            display: grid;
+            gap: 16px;
+            padding-top: 18px;
+        }
+
+        .record-card {
+            background: white;
+            border: 1px solid var(--panel-border);
+            border-radius: 16px;
+            padding: 18px;
+        }
+
+        .record-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 14px;
+            margin-bottom: 16px;
+        }
+
+        .record-card-main {
+            flex: 1;
+            min-width: 0;
+        }
+
+        .record-title {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+
+        .record-route {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: baseline;
+        }
+
+        .record-method {
+            font-weight: 800;
+            color: var(--text);
+        }
+
+        .record-url {
+            color: var(--text-muted);
+            word-break: break-all;
+        }
+
+        .record-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            justify-content: flex-end;
+            align-items: center;
+        }
+
+        .record-sections {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 16px;
+        }
+
         .detail-section {
-            margin-bottom: 20px;
+            background: var(--panel-muted);
+            border: 1px solid var(--panel-border);
+            border-radius: 14px;
+            padding: 16px;
         }
-        .detail-section:last-child {
-            margin-bottom: 0;
-        }
+
         .detail-section h4 {
-            color: #333;
-            margin-bottom: 10px;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        .detail-section pre {
-            background: #2d2d2d;
-            color: #f8f8f2;
-            padding: 15px;
-            border-radius: 6px;
-            overflow-x: auto;
             font-size: 13px;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            margin-bottom: 12px;
+        }
+
+        .error-block {
+            margin-bottom: 14px;
+            background: var(--error-bg);
+            color: var(--error-text);
+            border: 1px solid rgba(140, 36, 36, 0.18);
+            padding: 12px 14px;
+            border-radius: 12px;
+            line-height: 1.45;
+        }
+
+        .meta-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+            margin-bottom: 12px;
+        }
+
+        .meta-card {
+            background: white;
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+            padding: 12px;
+        }
+
+        .meta-card .label {
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.06em;
+            color: var(--text-muted);
+            margin-bottom: 6px;
+        }
+
+        .meta-card .value {
+            font-size: 13px;
+            line-height: 1.45;
+            color: var(--text);
+            word-break: break-word;
+        }
+
+        .mono {
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 12px;
+        }
+
+        .code-block,
+        .preview-block,
+        .body-placeholder,
+        .multipart-card {
+            background: white;
+            border: 1px solid var(--panel-border);
+            border-radius: 12px;
+        }
+
+        .code-block pre,
+        .preview-block pre {
+            margin: 0;
+            padding: 14px;
+            overflow-x: auto;
+            font-family: "SFMono-Regular", Consolas, "Liberation Mono", monospace;
+            font-size: 12px;
+            line-height: 1.55;
+            white-space: pre-wrap;
+            word-break: break-word;
+            color: var(--text);
+        }
+
+        .preview-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 10px;
+            padding: 10px 12px;
+            border-bottom: 1px solid var(--panel-border);
+            font-size: 12px;
+            font-weight: 700;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .body-placeholder {
+            padding: 14px;
+            color: var(--text-muted);
             line-height: 1.5;
         }
-        .detail-section code {
-            font-family: 'Monaco', 'Menlo', 'Ubuntu Mono', monospace;
+
+        .inline-alert {
+            margin-bottom: 12px;
+            background: #fff6e8;
+            border: 1px solid #ffd7a3;
+            color: #855300;
+            padding: 10px 12px;
+            border-radius: 12px;
+            line-height: 1.45;
         }
-        .empty-state {
+
+        .multipart-grid {
+            display: grid;
+            gap: 12px;
+        }
+
+        .multipart-card {
+            padding: 14px;
+        }
+
+        .multipart-title {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 10px;
+        }
+
+        .multipart-name {
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .multipart-meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 8px;
+            margin-bottom: 10px;
+        }
+
+        .inline-badge {
+            background: #eef3f9;
+            color: var(--text-muted);
+            text-transform: none;
+            font-weight: 600;
+        }
+
+        .empty-state,
+        .loading {
+            background: var(--panel-muted);
+            border: 1px dashed var(--panel-border);
+            border-radius: 18px;
+            padding: 48px 24px;
             text-align: center;
-            padding: 60px 20px;
-            color: #999;
+            color: var(--text-muted);
         }
-        .empty-state svg {
-            width: 80px;
-            height: 80px;
-            margin-bottom: 20px;
-            opacity: 0.5;
-        }
+
         .loading {
             display: none;
-            text-align: center;
-            padding: 40px;
-            color: #666;
+            margin-bottom: 16px;
         }
+
         .loading::after {
-            content: '';
+            content: "";
             display: inline-block;
-            width: 20px;
-            height: 20px;
-            border: 2px solid #f5576c;
+            width: 18px;
+            height: 18px;
+            margin-left: 10px;
+            border: 2px solid var(--accent);
             border-top-color: transparent;
             border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-            margin-left: 10px;
+            animation: spin .6s linear infinite;
             vertical-align: middle;
         }
+
         @keyframes spin {
             to { transform: rotate(360deg); }
         }
-        .status-badge {
-            display: inline-block;
-            padding: 3px 8px;
-            border-radius: 4px;
-            font-size: 11px;
-            font-weight: 500;
-            text-transform: uppercase;
-        }
-        .status-badge.enabled {
-            background: #d4edda;
-            color: #155724;
-        }
-        .status-badge.disabled {
-            background: #f8d7da;
-            color: #721c24;
+
+        @media (max-width: 900px) {
+            body {
+                padding: 12px;
+            }
+
+            .content,
+            .header {
+                padding: 20px;
+            }
+
+            .trace-summary,
+            .record-card-header {
+                flex-direction: column;
+            }
+
+            .trace-side,
+            .record-card-meta {
+                align-items: flex-start;
+                justify-content: flex-start;
+            }
         }
     </style>
 </head>
 <body>
     <div class="container">
         <div class="header">
-            <h1>🔍 Debug Console</h1>
-            <p>Monitor and debug HTTP requests and responses</p>
+            <h1>Debug Console</h1>
+            <p>Trace one incoming request through every downstream call. Binary bodies are summarized with content type, byte size, multipart part metadata, and MD5 digests instead of dumping raw payloads.</p>
         </div>
 
         <div class="content">
             <div class="controls">
-                <div class="toggle-switch">
+                <div class="control-card toggle-switch">
                     <label class="switch">
                         <input type="checkbox" id="debugToggle" onchange="toggleDebug()">
                         <span class="slider"></span>
@@ -327,38 +646,42 @@
                     <span>Debug Mode: <span id="debugStatus" class="status-badge disabled">Disabled</span></span>
                 </div>
 
-                <div class="form-group">
-                    <label for="maxRecords">Max Records:</label>
+                <div class="control-card form-group">
+                    <label for="maxRecords">Max Records</label>
                     <input type="number" id="maxRecords" min="1" max="1000" value="100" onchange="updateMaxRecords()">
                 </div>
 
-                <button class="btn btn-primary" onclick="refreshRecords()">🔄 Refresh</button>
-                <button class="btn btn-danger" onclick="clearRecords()">🗑️ Clear All</button>
+                <button class="btn btn-primary" onclick="refreshRecords()">Refresh</button>
+                <button class="btn btn-danger" onclick="clearRecords()">Clear All</button>
             </div>
 
             <div class="stats">
                 <div class="stat-card">
+                    <div class="value" id="traceCount">0</div>
+                    <div class="label">Request Chains</div>
+                </div>
+                <div class="stat-card">
                     <div class="value" id="totalRecords">0</div>
-                    <div class="label">Total Records</div>
+                    <div class="label">Recorded Events</div>
                 </div>
                 <div class="stat-card">
                     <div class="value" id="incomingRecords">0</div>
-                    <div class="label">Incoming Requests</div>
+                    <div class="label">Incoming Records</div>
                 </div>
                 <div class="stat-card">
                     <div class="value" id="outgoingRecords">0</div>
-                    <div class="label">Outgoing Requests</div>
+                    <div class="label">Outgoing Records</div>
                 </div>
             </div>
 
-            <div id="loading" class="loading">Loading...</div>
+            <div id="loading" class="loading">Loading</div>
             <div id="records" class="records"></div>
         </div>
     </div>
 
     <script>
         let autoRefreshInterval = null;
-        let expandedRecords = new Set();
+        const expandedTraces = new Set();
 
         function showLoading(show) {
             document.getElementById('loading').style.display = show ? 'block' : 'none';
@@ -368,13 +691,11 @@
             try {
                 const response = await fetch('/api/debug/status');
                 if (!response.ok) throw new Error('Failed to load debug status');
-                const status = await response.json();
 
+                const status = await response.json();
                 document.getElementById('debugToggle').checked = status.enabled;
                 document.getElementById('maxRecords').value = status.maxRecords;
                 updateDebugStatus(status.enabled);
-
-                document.getElementById('totalRecords').textContent = status.recordCount;
             } catch (error) {
                 console.error('Failed to load status:', error);
             }
@@ -386,11 +707,12 @@
                 statusEl.textContent = 'Enabled';
                 statusEl.className = 'status-badge enabled';
                 startAutoRefresh();
-            } else {
-                statusEl.textContent = 'Disabled';
-                statusEl.className = 'status-badge disabled';
-                stopAutoRefresh();
+                return;
             }
+
+            statusEl.textContent = 'Disabled';
+            statusEl.className = 'status-badge disabled';
+            stopAutoRefresh();
         }
 
         async function toggleDebug() {
@@ -402,6 +724,7 @@
                     body: JSON.stringify({ enabled })
                 });
                 if (!response.ok) throw new Error('Failed to toggle debug');
+
                 updateDebugStatus(enabled);
                 if (enabled) {
                     refreshRecords();
@@ -413,7 +736,7 @@
         }
 
         async function updateMaxRecords() {
-            const maxRecords = parseInt(document.getElementById('maxRecords').value);
+            const maxRecords = parseInt(document.getElementById('maxRecords').value, 10);
             try {
                 const response = await fetch('/api/debug/max-records', {
                     method: 'POST',
@@ -431,6 +754,7 @@
             try {
                 const response = await fetch('/api/debug/records');
                 if (!response.ok) throw new Error('Failed to load records');
+
                 const records = await response.json();
                 renderRecords(records);
                 await loadStatus();
@@ -442,284 +766,388 @@
 
         function renderRecords(records) {
             const container = document.getElementById('records');
+            const traces = groupRecordsByTrace(records);
+
             let incomingCount = 0;
             let outgoingCount = 0;
+            for (const record of records) {
+                if (record.type === 'incoming') {
+                    incomingCount++;
+                } else if (record.type === 'outgoing') {
+                    outgoingCount++;
+                }
+            }
 
-            if (records.length === 0) {
+            document.getElementById('traceCount').textContent = traces.length;
+            document.getElementById('totalRecords').textContent = records.length;
+            document.getElementById('incomingRecords').textContent = incomingCount;
+            document.getElementById('outgoingRecords').textContent = outgoingCount;
+
+            if (traces.length === 0) {
                 container.innerHTML = `
                     <div class="empty-state">
-                        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                            <path d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
-                        </svg>
-                        <p>No records yet. Enable debug mode to start recording.</p>
+                        <p>No records yet. Enable debug mode and send traffic to start capturing request chains.</p>
                     </div>
                 `;
                 return;
             }
 
-            container.innerHTML = records.map(record => {
-                if (record.type === 'incoming') {
-                    incomingCount++;
-                } else {
-                    outgoingCount++;
-                }
-
-                const hasResponse = record.response.statusCode !== undefined;
-                const statusClass = record.error ? 'error' : (hasResponse ? 'success' : 'pending');
-                const statusText = record.error ? 'Error' : (hasResponse ? record.response.statusCode : 'Pending');
-
-                const requestContentType = record.request.headers['Content-Type'] || '';
-                const responseContentType = record.response.headers ? (record.response.headers['Content-Type'] || '') : '';
-
-                const isExpanded = expandedRecords.has(record.id);
-                return `
-                    <div class="record-item" onclick="toggleDetails('${record.id}')">
-                        <div class="record-summary">
-                            <span class="record-type ${record.type}">${record.type}</span>
-                            <div class="record-info">
-                                <span class="method">${record.request.method}</span>
-                                <span class="url">${record.request.url}</span>
-                                <span class="timestamp">${formatTimestamp(record.timestamp)}</span>
-                            </div>
-                            <span class="record-status ${statusClass}">${statusText}</span>
-                        </div>
-                        <div id="details-${record.id}" class="record-details ${isExpanded ? 'show' : ''}">
-                            ${record.error ? `<div class="detail-section"><h4>Error</h4><pre>${escapeHtml(record.error)}</pre></div>` : ''}
-                            <div class="detail-section">
-                                <h4>Request <button class="btn btn-secondary" style="font-size: 12px; padding: 5px 10px; margin-left: 10px;" onclick="copyRequest('${record.id}', event)">📋 Copy</button></h4>
-                                <pre id="request-body-${record.id}"><strong>Method:</strong> ${escapeHtml(record.request.method)}
-<strong>URL:</strong> ${escapeHtml(record.request.url)}
-<strong>Headers:</strong>
-${formatHeaders(record.request.headers)}
-<strong>Body:</strong>
-${escapeHtml(formatBody(record.request.body, requestContentType))}</pre>
-                            </div>
-                            ${hasResponse ? `
-                            <div class="detail-section">
-                                <h4>Response <button class="btn btn-secondary" style="font-size: 12px; padding: 5px 10px; margin-left: 10px;" onclick="copyResponse('${record.id}', event)">📋 Copy</button></h4>
-                                <pre id="response-body-${record.id}"><strong>Status Code:</strong> ${record.response.statusCode}
-<strong>Headers:</strong>
-${formatHeaders(record.response.headers)}
-<strong>Body:</strong>
-${escapeHtml(formatBody(record.response.body, responseContentType))}</pre>
-                            </div>
-                            ` : ''}
-                        </div>
-                    </div>
-                `;
-            }).join('');
-
-            document.getElementById('incomingRecords').textContent = incomingCount;
-            document.getElementById('outgoingRecords').textContent = outgoingCount;
-            document.getElementById('totalRecords').textContent = records.length;
+            container.innerHTML = traces.map(renderTraceCard).join('');
         }
 
-        function toggleDetails(id) {
-            const details = document.getElementById('details-' + id);
-            if (expandedRecords.has(id)) {
-                expandedRecords.delete(id);
-                details.classList.remove('show');
-            } else {
-                expandedRecords.add(id);
-                details.classList.add('show');
+        function groupRecordsByTrace(records) {
+            const traceMap = new Map();
+
+            for (const record of records) {
+                const traceId = record.traceId || record.id;
+                if (!traceMap.has(traceId)) {
+                    traceMap.set(traceId, {
+                        traceId,
+                        records: [],
+                        latestTimestamp: record.timestamp
+                    });
+                }
+
+                const trace = traceMap.get(traceId);
+                trace.records.push(record);
+                if (new Date(record.timestamp) > new Date(trace.latestTimestamp)) {
+                    trace.latestTimestamp = record.timestamp;
+                }
             }
+
+            return Array.from(traceMap.values())
+                .map(trace => {
+                    trace.records.sort((a, b) => {
+                        const typeOrder = (a.type === 'incoming' ? 0 : 1) - (b.type === 'incoming' ? 0 : 1);
+                        if (typeOrder !== 0) {
+                            return typeOrder;
+                        }
+                        return new Date(a.timestamp) - new Date(b.timestamp);
+                    });
+
+                    trace.rootRecord = trace.records.find(record => record.type === 'incoming') || trace.records[0];
+                    trace.outgoingCount = trace.records.filter(record => record.type === 'outgoing').length;
+                    trace.status = getTraceStatus(trace.records);
+                    return trace;
+                })
+                .sort((a, b) => new Date(b.latestTimestamp) - new Date(a.latestTimestamp));
+        }
+
+        function getTraceStatus(records) {
+            if (records.some(record => record.error)) {
+                return { className: 'error', text: 'Error' };
+            }
+
+            const responseStatuses = records
+                .filter(record => record.response && typeof record.response.statusCode === 'number' && record.response.statusCode > 0)
+                .map(record => record.response.statusCode);
+
+            if (responseStatuses.some(status => status >= 400)) {
+                return { className: 'error', text: 'Response Error' };
+            }
+
+            if (records.every(record => record.response && typeof record.response.statusCode === 'number' && record.response.statusCode > 0)) {
+                return { className: 'success', text: 'Complete' };
+            }
+
+            return { className: 'pending', text: 'Pending' };
+        }
+
+        function getRecordStatus(record) {
+            if (record.error) {
+                return { className: 'error', text: 'Error' };
+            }
+
+            if (record.response && typeof record.response.statusCode === 'number' && record.response.statusCode > 0) {
+                if (record.response.statusCode >= 400) {
+                    return { className: 'error', text: String(record.response.statusCode) };
+                }
+                return { className: 'success', text: String(record.response.statusCode) };
+            }
+
+            return { className: 'pending', text: 'Pending' };
+        }
+
+        function renderTraceCard(trace) {
+            const root = trace.rootRecord || {};
+            const request = root.request || {};
+            const isExpanded = expandedTraces.has(trace.traceId);
+
+            return `
+                <div class="trace-item">
+                    <div class="trace-summary" onclick="toggleTraceDetails('${trace.traceId}')">
+                        <div class="trace-main">
+                            <div class="trace-topline">
+                                <span class="trace-status ${trace.status.className}">${trace.status.text}</span>
+                                <span class="trace-chip mono">${escapeHtml(trace.traceId)}</span>
+                            </div>
+                            <div class="trace-request">
+                                <span class="trace-method">${escapeHtml(request.method || '-')}</span>
+                                <span class="trace-url">${escapeHtml(request.url || '(unknown route)')}</span>
+                            </div>
+                            <div class="trace-meta">
+                                <span class="trace-chip">${trace.records.length} event(s)</span>
+                                <span class="trace-chip">${trace.outgoingCount} downstream call(s)</span>
+                                ${renderTraceBodyChip(root)}
+                            </div>
+                        </div>
+                        <div class="trace-side">
+                            <span class="trace-time">${formatTimestamp(trace.latestTimestamp)}</span>
+                            <span class="trace-chip">${isExpanded ? 'Collapse' : 'Expand'}</span>
+                        </div>
+                    </div>
+                    <div id="details-${trace.traceId}" class="trace-details ${isExpanded ? 'show' : ''}">
+                        <div class="trace-flow">
+                            ${trace.records.map(renderRecordCard).join('')}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderTraceBodyChip(record) {
+            if (!record || !record.request || !record.request.body) {
+                return '';
+            }
+
+            const body = record.request.body;
+            if (!body.size) {
+                return '<span class="trace-chip">Empty body</span>';
+            }
+
+            return `<span class="trace-chip">${escapeHtml(body.kind || 'body')} · ${formatBytes(body.size)}</span>`;
+        }
+
+        function renderRecordCard(record) {
+            const status = getRecordStatus(record);
+            const hasResponse = record.response && typeof record.response.statusCode === 'number' && record.response.statusCode > 0;
+            const responseStatus = record.response && typeof record.response.statusCode === 'number' && record.response.statusCode > 0
+                ? `<span class="inline-badge">Response ${record.response.statusCode}</span>`
+                : '';
+
+            return `
+                <div class="record-card">
+                    <div class="record-card-header">
+                        <div class="record-card-main">
+                            <div class="record-title">
+                                <span class="record-type ${record.type}">${escapeHtml(record.type)}</span>
+                                <span class="record-status ${status.className}">${status.text}</span>
+                                ${responseStatus}
+                            </div>
+                            <div class="record-route">
+                                <span class="record-method">${escapeHtml(record.request?.method || '-')}</span>
+                                <span class="record-url">${escapeHtml(record.request?.url || '(unknown route)')}</span>
+                            </div>
+                        </div>
+                        <div class="record-card-meta">
+                            <span class="trace-chip mono">${escapeHtml(record.id || '')}</span>
+                            <span class="trace-time">${formatTimestamp(record.timestamp)}</span>
+                        </div>
+                    </div>
+
+                    ${record.error ? `<div class="error-block">${escapeHtml(record.error)}</div>` : ''}
+
+                    <div class="record-sections">
+                        <div class="detail-section">
+                            <h4>Request</h4>
+                            ${renderHeaders(record.request?.headers)}
+                            ${renderBodyInfo(record.request?.body)}
+                        </div>
+                        <div class="detail-section">
+                            <h4>Response</h4>
+                            ${hasResponse
+                                ? `${renderResponseMeta(record.response)}${renderHeaders(record.response?.headers)}${renderBodyInfo(record.response?.body)}`
+                                : '<div class="body-placeholder">No response recorded yet.</div>'}
+                        </div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderResponseMeta(response) {
+            if (!response || typeof response.statusCode !== 'number' || response.statusCode <= 0) {
+                return '<div class="body-placeholder">No response recorded yet.</div>';
+            }
+
+            return `
+                <div class="meta-grid">
+                    <div class="meta-card">
+                        <div class="label">Status Code</div>
+                        <div class="value">${response.statusCode}</div>
+                    </div>
+                </div>
+            `;
+        }
+
+        function renderHeaders(headers) {
+            if (!headers || Object.keys(headers).length === 0) {
+                return '<div class="body-placeholder">Headers are empty.</div>';
+            }
+
+            const lines = Object.entries(headers)
+                .sort(([a], [b]) => a.localeCompare(b))
+                .map(([key, value]) => `${key}: ${value}`)
+                .join('\n');
+
+            return `
+                <div class="code-block">
+                    <div class="preview-header">Headers</div>
+                    <pre>${escapeHtml(lines)}</pre>
+                </div>
+            `;
+        }
+
+        function renderBodyInfo(body) {
+            if (!body) {
+                return '<div class="body-placeholder">Body metadata is unavailable.</div>';
+            }
+
+            const summary = [
+                renderMetaCard('Kind', body.kind || 'unknown'),
+                renderMetaCard('Content-Type', body.contentType || '(unknown)'),
+                renderMetaCard('Size', `${formatBytes(body.size || 0)} (${body.size || 0} B)`),
+                renderMetaCard('MD5', body.md5 || '(none)', true)
+            ].join('');
+
+            let extra = '';
+            if (body.error) {
+                extra += `<div class="inline-alert">Body summary error: ${escapeHtml(body.error)}</div>`;
+            }
+            if (body.preview) {
+                extra += `
+                    <div class="preview-block">
+                        <div class="preview-header">
+                            <span>Preview</span>
+                            ${body.truncated ? '<span class="inline-badge">Truncated</span>' : ''}
+                        </div>
+                        <pre>${escapeHtml(body.preview)}</pre>
+                    </div>
+                `;
+            }
+            if (body.multipart) {
+                extra += renderMultipart(body.multipart);
+            }
+            if (!body.preview && !body.multipart) {
+                extra += `<div class="body-placeholder">${escapeHtml(body.summary || 'No preview available for this body.')}</div>`;
+            }
+
+            return `
+                <div class="meta-grid">${summary}</div>
+                ${extra}
+            `;
+        }
+
+        function renderMetaCard(label, value, mono = false) {
+            const valueClass = mono ? 'value mono' : 'value';
+            return `
+                <div class="meta-card">
+                    <div class="label">${escapeHtml(label)}</div>
+                    <div class="${valueClass}">${escapeHtml(String(value))}</div>
+                </div>
+            `;
+        }
+
+        function renderMultipart(multipart) {
+            const fieldCards = (multipart.fields || []).map(field => `
+                <div class="multipart-card">
+                    <div class="multipart-title">
+                        <span class="multipart-name">${escapeHtml(field.name)}</span>
+                        <span class="inline-badge">Field</span>
+                    </div>
+                    <div class="multipart-meta">
+                        <span class="inline-badge">${formatBytes(field.size || 0)}</span>
+                        ${field.contentType ? `<span class="inline-badge">${escapeHtml(field.contentType)}</span>` : ''}
+                        ${field.md5 ? `<span class="inline-badge mono">${escapeHtml(field.md5)}</span>` : ''}
+                        ${field.truncated ? '<span class="inline-badge">Truncated</span>' : ''}
+                    </div>
+                    ${field.preview ? `<div class="preview-block"><pre>${escapeHtml(field.preview)}</pre></div>` : '<div class="body-placeholder">Empty field value.</div>'}
+                </div>
+            `).join('');
+
+            const fileCards = (multipart.files || []).map(file => `
+                <div class="multipart-card">
+                    <div class="multipart-title">
+                        <span class="multipart-name">${escapeHtml(file.name)}</span>
+                        <span class="inline-badge">File</span>
+                    </div>
+                    <div class="multipart-meta">
+                        ${file.filename ? `<span class="inline-badge">${escapeHtml(file.filename)}</span>` : ''}
+                        ${file.contentType ? `<span class="inline-badge">${escapeHtml(file.contentType)}</span>` : ''}
+                        <span class="inline-badge">${formatBytes(file.size || 0)}</span>
+                    </div>
+                    <div class="meta-grid">
+                        ${renderMetaCard('Filename', file.filename || '(none)')}
+                        ${renderMetaCard('Content-Type', file.contentType || '(unknown)')}
+                        ${renderMetaCard('Size', `${formatBytes(file.size || 0)} (${file.size || 0} B)`)}
+                        ${renderMetaCard('MD5', file.md5 || '(none)', true)}
+                    </div>
+                </div>
+            `).join('');
+
+            return `
+                <div class="multipart-grid">
+                    ${fieldCards}
+                    ${fileCards}
+                </div>
+            `;
+        }
+
+        function toggleTraceDetails(traceId) {
+            const details = document.getElementById('details-' + traceId);
+            if (!details) {
+                return;
+            }
+
+            if (expandedTraces.has(traceId)) {
+                expandedTraces.delete(traceId);
+                details.classList.remove('show');
+                return;
+            }
+
+            expandedTraces.add(traceId);
+            details.classList.add('show');
         }
 
         function formatTimestamp(timestamp) {
-            const date = new Date(timestamp);
-            return date.toLocaleString();
-        }
-
-        function formatHeaders(headers) {
-            if (!headers || Object.keys(headers).length === 0) {
-                return '(empty)';
+            if (!timestamp) {
+                return '-';
             }
-            return Object.entries(headers).map(([key, value]) => `  ${key}: ${value}`).join('\n');
+            return new Date(timestamp).toLocaleString();
         }
 
-        function escapeHtml(text) {
+        function formatBytes(bytes) {
+            if (!bytes) {
+                return '0 B';
+            }
+
+            const units = ['B', 'KB', 'MB', 'GB'];
+            let value = bytes;
+            let unitIndex = 0;
+            while (value >= 1024 && unitIndex < units.length - 1) {
+                value /= 1024;
+                unitIndex++;
+            }
+
+            const precision = unitIndex === 0 ? 0 : 2;
+            return `${value.toFixed(precision)} ${units[unitIndex]}`;
+        }
+
+        function escapeHtml(value) {
+            const text = value == null ? '' : String(value);
             const div = document.createElement('div');
             div.textContent = text;
             return div.innerHTML;
-        }
-
-        function formatBody(body, contentType) {
-            if (!body) {
-                return '(empty)';
-            }
-
-            // Check if body is binary content (image, video, etc.)
-            if (contentType && (contentType.startsWith('image/') || contentType.startsWith('video/') || contentType.startsWith('audio/'))) {
-                return `[Binary content - ${contentType}, size: ${body.length} bytes]`;
-            }
-
-            // Check if body is too large (> 10KB)
-            if (body.length > 10240) {
-                // Try to parse as multipart form data to show entries
-                if (contentType && contentType.includes('multipart/form-data')) {
-                    return formatMultipartBody(body);
-                }
-                return `[Large content - size: ${body.length} bytes, truncated for display]`;
-            }
-
-            // Check if body contains non-printable characters (likely binary)
-            const printableChars = body.replace(/[\x20-\x7E\n\r\t]/g, '').length;
-            if (printableChars > body.length * 0.3) {
-                return `[Binary data - size: ${body.length} bytes]`;
-            }
-
-            return body;
-        }
-
-        function formatMultipartBody(body) {
-            try {
-                // Try to find boundary from the first line of body
-                const firstLineMatch = body.match(/^--([^\r\n]+)/);
-                let boundary = null;
-
-                if (firstLineMatch) {
-                    boundary = firstLineMatch[1];
-                } else {
-                    // Fallback: try to find boundary in Content-Type header
-                    const boundaryMatch = body.match(/boundary="?([^";\s]+)"?/i);
-                    if (boundaryMatch) {
-                        boundary = boundaryMatch[1];
-                    }
-                }
-
-                if (!boundary) {
-                    console.log('No boundary found in body, first 500 chars:', body.substring(0, 500));
-                    return `[Large multipart content - size: ${body.length} bytes, no boundary found]`;
-                }
-
-                console.log('Found boundary:', boundary);
-                const parts = body.split('--' + boundary);
-                console.log('Number of parts:', parts.length);
-
-                let result = '';
-
-                for (let i = 0; i < parts.length; i++) {
-                    const part = parts[i];
-
-                    if (!part.trim() || part.trim() === '--') {
-                        continue;
-                    }
-
-                    const nameMatch = part.match(/name="?([^";]+)"?/i);
-                    const name = nameMatch ? nameMatch[1] : 'unknown';
-
-                    // Check if it's an image (by Content-Type or filename)
-                    if (part.includes('Content-Type: image/') || part.includes('Content-Type:image/') ||
-                        part.includes('filename="') || part.includes("filename='")) {
-                        const partSize = part.length;
-                        result += `${name}: [Image, size: ${partSize} bytes]\n\n`;
-                    } else {
-                        // Extract content for non-image fields
-                        const headerEndMatch = part.match(/\r?\n\r?\n/);
-                        if (headerEndMatch) {
-                            const headerEndIndex = headerEndMatch.index + headerEndMatch[0].length;
-                            let content = part.substring(headerEndIndex).trim();
-
-                            // Remove trailing boundary markers
-                            content = content.replace(/\r?\n--\r?\n?$/, '');
-
-                            // Try to format as JSON if possible
-                            try {
-                                const parsed = JSON.parse(content);
-                                content = JSON.stringify(parsed, null, 2);
-                            } catch (e) {
-                                // Not JSON, keep as is
-                            }
-
-                            result += `${name}:\n${content}\n\n`;
-                        }
-                    }
-                }
-
-                return result.trim() || `[No valid parts found in multipart]`;
-            } catch (e) {
-                console.error('Multipart parsing error:', e);
-                return `[Large content - size: ${body.length} bytes, parsing error: ${e.message}]`;
-            }
-        }
-
-        function copyResponse(recordId, event) {
-            event.stopPropagation();
-            const preElement = document.getElementById('response-body-' + recordId);
-            const text = preElement.textContent || preElement.innerText;
-
-            console.log('Copying response text, length:', text.length);
-
-            copyToClipboard(text, event.target);
-        }
-
-        function copyRequest(recordId, event) {
-            event.stopPropagation();
-            const preElement = document.getElementById('request-body-' + recordId);
-            const text = preElement.textContent || preElement.innerText;
-
-            console.log('Copying request text, length:', text.length);
-
-            copyToClipboard(text, event.target);
-        }
-
-        function copyToClipboard(text, button) {
-            // Try modern clipboard API first
-            if (navigator.clipboard && navigator.clipboard.writeText) {
-                navigator.clipboard.writeText(text).then(() => {
-                    showCopySuccess(button);
-                }).catch(err => {
-                    console.error('Clipboard API failed, trying fallback:', err);
-                    fallbackCopyToClipboard(text, button);
-                });
-            } else {
-                console.log('Clipboard API not available, using fallback');
-                fallbackCopyToClipboard(text, button);
-            }
-        }
-
-        function fallbackCopyToClipboard(text, button) {
-            const textArea = document.createElement('textarea');
-            textArea.value = text;
-            textArea.style.position = 'fixed';
-            textArea.style.left = '-999999px';
-            textArea.style.top = '-999999px';
-            document.body.appendChild(textArea);
-            textArea.focus();
-            textArea.select();
-
-            try {
-                const successful = document.execCommand('copy');
-                if (successful) {
-                    showCopySuccess(button);
-                } else {
-                    throw new Error('execCommand failed');
-                }
-            } catch (err) {
-                console.error('Fallback copy failed:', err);
-                alert('Failed to copy to clipboard. Please select and copy manually.');
-            }
-
-            document.body.removeChild(textArea);
-        }
-
-        function showCopySuccess(button) {
-            const originalText = button.textContent;
-            button.textContent = '✓ Copied!';
-            button.style.background = '#28a745';
-            setTimeout(() => {
-                button.textContent = originalText;
-                button.style.background = '';
-            }, 2000);
         }
 
         async function clearRecords() {
             if (!confirm('Are you sure you want to clear all debug records?')) {
                 return;
             }
+
             try {
                 const response = await fetch('/api/debug/records', { method: 'DELETE' });
                 if (!response.ok) throw new Error('Failed to clear records');
+                expandedTraces.clear();
                 refreshRecords();
             } catch (error) {
                 console.error('Failed to clear records:', error);
@@ -727,18 +1155,20 @@ ${escapeHtml(formatBody(record.response.body, responseContentType))}</pre>
         }
 
         function startAutoRefresh() {
-            if (autoRefreshInterval) return;
+            if (autoRefreshInterval) {
+                return;
+            }
             autoRefreshInterval = setInterval(refreshRecords, 2000);
         }
 
         function stopAutoRefresh() {
-            if (autoRefreshInterval) {
-                clearInterval(autoRefreshInterval);
-                autoRefreshInterval = null;
+            if (!autoRefreshInterval) {
+                return;
             }
+            clearInterval(autoRefreshInterval);
+            autoRefreshInterval = null;
         }
 
-        // Initial load
         loadStatus();
         refreshRecords();
     </script>
