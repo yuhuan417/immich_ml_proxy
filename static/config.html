@@ -407,7 +407,7 @@
         }
 
         .routing-row {
-            grid-template-columns: minmax(180px, 1.2fr) minmax(180px, 1fr) auto;
+            grid-template-columns: minmax(170px, 1.1fr) minmax(170px, 1fr) minmax(150px, 0.8fr) auto;
             align-items: center;
         }
 
@@ -662,7 +662,7 @@
                 <div class="panel-header">
                     <div>
                         <h2 id="taskRoutingTitle" class="panel-title">Task Routing</h2>
-                        <p class="panel-subtitle">Use task routing for grouped requests such as <code>facial-recognition</code> and <code>ocr</code>. Legacy <code>facial_recognition</code> input is normalized automatically.</p>
+                        <p class="panel-subtitle">Use task routing for grouped requests such as <code>facial-recognition</code> and <code>ocr</code>. Policy <code>strict</code> always uses routed backend; <code>fallback</code> can degrade to default backend when unhealthy. Legacy <code>facial_recognition</code> input is normalized automatically.</p>
                     </div>
                 </div>
                 <div class="helper-list" aria-hidden="true">
@@ -697,7 +697,7 @@
                 <div class="panel-header">
                     <div>
                         <h2 id="modelRoutingTitle" class="panel-title">CLIP ModelType Routing</h2>
-                        <p class="panel-subtitle">Only CLIP is split by modelType. Missing modelType routes fall back to task routing and then the default backend.</p>
+                        <p class="panel-subtitle">Only CLIP is split by modelType. Missing modelType routes fall back to task routing and then the default backend. Policy <code>strict</code> forces routed backend; <code>fallback</code> allows unhealthy route to degrade.</p>
                     </div>
                 </div>
                 <div class="helper-list" aria-hidden="true">
@@ -731,6 +731,7 @@
     <script>
         const TASK_SUGGESTIONS = ['clip', 'facial-recognition', 'ocr'];
         const MODEL_TYPES = ['textual', 'visual'];
+        const ROUTING_POLICIES = ['strict', 'fallback'];
         const HEALTH_TEXT = {
             healthy: 'Healthy',
             unhealthy: 'Unhealthy',
@@ -820,7 +821,9 @@
                 defaultBackend: '',
                 backends: [],
                 taskRouting: {},
-                modelTypeRouting: {}
+                modelTypeRouting: {},
+                taskRoutingPolicy: {},
+                modelTypeRoutingPolicy: {}
             };
         }
 
@@ -830,6 +833,10 @@
                 return 'facial-recognition';
             }
             return trimmed;
+        }
+
+        function normalizeRoutingPolicyValue(policy) {
+            return policy === 'fallback' ? 'fallback' : 'strict';
         }
 
         function normalizeConfig(raw) {
@@ -852,6 +859,39 @@
             if (raw?.modelTypeRouting && typeof raw.modelTypeRouting === 'object') {
                 for (const [modelType, backendName] of Object.entries(raw.modelTypeRouting)) {
                     result.modelTypeRouting[modelType] = String(backendName);
+                }
+            }
+
+            if (raw?.taskRoutingPolicy && typeof raw.taskRoutingPolicy === 'object') {
+                for (const [taskName, policy] of Object.entries(raw.taskRoutingPolicy)) {
+                    result.taskRoutingPolicy[normalizeTaskNameInput(taskName)] = normalizeRoutingPolicyValue(String(policy));
+                }
+            }
+
+            if (raw?.modelTypeRoutingPolicy && typeof raw.modelTypeRoutingPolicy === 'object') {
+                for (const [modelType, policy] of Object.entries(raw.modelTypeRoutingPolicy)) {
+                    result.modelTypeRoutingPolicy[modelType] = normalizeRoutingPolicyValue(String(policy));
+                }
+            }
+
+            for (const taskName of Object.keys(result.taskRouting)) {
+                if (!Object.prototype.hasOwnProperty.call(result.taskRoutingPolicy, taskName)) {
+                    result.taskRoutingPolicy[taskName] = 'strict';
+                }
+            }
+            for (const taskName of Object.keys(result.taskRoutingPolicy)) {
+                if (!Object.prototype.hasOwnProperty.call(result.taskRouting, taskName)) {
+                    delete result.taskRoutingPolicy[taskName];
+                }
+            }
+            for (const modelType of Object.keys(result.modelTypeRouting)) {
+                if (!Object.prototype.hasOwnProperty.call(result.modelTypeRoutingPolicy, modelType)) {
+                    result.modelTypeRoutingPolicy[modelType] = 'strict';
+                }
+            }
+            for (const modelType of Object.keys(result.modelTypeRoutingPolicy)) {
+                if (!Object.prototype.hasOwnProperty.call(result.modelTypeRouting, modelType)) {
+                    delete result.modelTypeRoutingPolicy[modelType];
                 }
             }
 
@@ -1031,6 +1071,10 @@
                 backendSelect.dataset.action = 'routing-backend';
                 backendSelect.dataset.task = taskName;
 
+                const policySelect = createRoutingPolicySelect(config.taskRoutingPolicy[taskName] || 'strict');
+                policySelect.dataset.action = 'routing-policy';
+                policySelect.dataset.task = taskName;
+
                 const removeButton = createButton('Remove', 'btn btn-danger', {
                     type: 'button',
                     dataAction: 'remove-routing',
@@ -1039,6 +1083,7 @@
 
                 row.appendChild(taskInput);
                 row.appendChild(backendSelect);
+                row.appendChild(policySelect);
                 row.appendChild(removeButton);
                 refs.routingList.appendChild(row);
             }
@@ -1066,6 +1111,10 @@
                 backendSelect.dataset.action = 'model-backend';
                 backendSelect.dataset.modelType = modelType;
 
+                const policySelect = createRoutingPolicySelect(config.modelTypeRoutingPolicy[modelType] || 'strict');
+                policySelect.dataset.action = 'model-policy';
+                policySelect.dataset.modelType = modelType;
+
                 const removeButton = createButton('Remove', 'btn btn-danger', {
                     type: 'button',
                     dataAction: 'remove-model-route',
@@ -1074,6 +1123,7 @@
 
                 row.appendChild(modelTypeSelect);
                 row.appendChild(backendSelect);
+                row.appendChild(policySelect);
                 row.appendChild(removeButton);
                 refs.modelTypeRoutingList.appendChild(row);
             }
@@ -1141,6 +1191,18 @@
             }
 
             select.value = selectedModelType;
+            return select;
+        }
+
+        function createRoutingPolicySelect(selectedPolicy) {
+            const select = document.createElement('select');
+            for (const policy of ROUTING_POLICIES) {
+                const option = document.createElement('option');
+                option.value = policy;
+                option.textContent = policy;
+                select.appendChild(option);
+            }
+            select.value = normalizeRoutingPolicyValue(selectedPolicy);
             return select;
         }
 
@@ -1223,6 +1285,7 @@
             }
 
             delete config.taskRouting[button.dataset.task];
+            delete config.taskRoutingPolicy[button.dataset.task];
             renderApp();
         }
 
@@ -1237,6 +1300,10 @@
                 config.taskRouting[task] = target.value;
                 renderApp();
             }
+            if (target.dataset.action === 'routing-policy') {
+                config.taskRoutingPolicy[task] = normalizeRoutingPolicyValue(target.value);
+                renderApp();
+            }
         }
 
         function handleModelTypeRoutingClick(event) {
@@ -1246,6 +1313,7 @@
             }
 
             delete config.modelTypeRouting[button.dataset.modelType];
+            delete config.modelTypeRoutingPolicy[button.dataset.modelType];
             renderApp();
         }
 
@@ -1258,6 +1326,10 @@
             }
             if (target.dataset.action === 'model-backend') {
                 config.modelTypeRouting[modelType] = target.value;
+                renderApp();
+            }
+            if (target.dataset.action === 'model-policy') {
+                config.modelTypeRoutingPolicy[modelType] = normalizeRoutingPolicyValue(target.value);
                 renderApp();
             }
         }
@@ -1299,12 +1371,14 @@
             for (const [taskName, backendName] of Object.entries(config.taskRouting)) {
                 if (backendName === removed.name) {
                     delete config.taskRouting[taskName];
+                    delete config.taskRoutingPolicy[taskName];
                 }
             }
 
             for (const [modelType, backendName] of Object.entries(config.modelTypeRouting)) {
                 if (backendName === removed.name) {
                     delete config.modelTypeRouting[modelType];
+                    delete config.modelTypeRoutingPolicy[modelType];
                 }
             }
 
@@ -1390,6 +1464,7 @@
             }
 
             config.taskRouting[taskName] = backendName;
+            config.taskRoutingPolicy[taskName] = 'strict';
             refs.newTaskName.value = '';
             refs.newTaskBackend.value = '';
             renderApp();
@@ -1416,6 +1491,10 @@
 
             config.taskRouting[nextTask] = config.taskRouting[previousTask];
             delete config.taskRouting[previousTask];
+            if (Object.prototype.hasOwnProperty.call(config.taskRoutingPolicy, previousTask)) {
+                config.taskRoutingPolicy[nextTask] = normalizeRoutingPolicyValue(config.taskRoutingPolicy[previousTask]);
+                delete config.taskRoutingPolicy[previousTask];
+            }
             renderApp();
             showNotice(`Task route renamed to "${nextTask}".`, 'info');
         }
@@ -1430,6 +1509,7 @@
             }
 
             config.modelTypeRouting[modelType] = backendName;
+            config.modelTypeRoutingPolicy[modelType] = 'strict';
             refs.newModelType.value = '';
             refs.newModelTypeBackend.value = '';
             renderApp();
@@ -1455,6 +1535,10 @@
 
             config.modelTypeRouting[nextModelType] = config.modelTypeRouting[previousModelType];
             delete config.modelTypeRouting[previousModelType];
+            if (Object.prototype.hasOwnProperty.call(config.modelTypeRoutingPolicy, previousModelType)) {
+                config.modelTypeRoutingPolicy[nextModelType] = normalizeRoutingPolicyValue(config.modelTypeRoutingPolicy[previousModelType]);
+                delete config.modelTypeRoutingPolicy[previousModelType];
+            }
             renderApp();
             showNotice(`ModelType route renamed to "${nextModelType}".`, 'info');
         }
@@ -1490,12 +1574,22 @@
                 if (!backendNames.has(backendName)) {
                     return `Task routing for ${taskName} references an unknown backend ${backendName}.`;
                 }
+                const policy = normalizeRoutingPolicyValue(config.taskRoutingPolicy[taskName]);
+                if (!ROUTING_POLICIES.includes(policy)) {
+                    return `Task routing policy for ${taskName} is invalid.`;
+                }
+                config.taskRoutingPolicy[taskName] = policy;
             }
 
             for (const [modelType, backendName] of Object.entries(config.modelTypeRouting)) {
                 if (!backendNames.has(backendName)) {
                     return `ModelType routing for ${modelType} references an unknown backend ${backendName}.`;
                 }
+                const policy = normalizeRoutingPolicyValue(config.modelTypeRoutingPolicy[modelType]);
+                if (!ROUTING_POLICIES.includes(policy)) {
+                    return `ModelType routing policy for ${modelType} is invalid.`;
+                }
+                config.modelTypeRoutingPolicy[modelType] = policy;
             }
 
             return '';

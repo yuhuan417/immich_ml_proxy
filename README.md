@@ -7,6 +7,7 @@ A proxy service for Immich ML with support for multi-backend routing, task-aware
 - **Multi-backend Support**: Configure multiple Immich ML backend servers
 - **Task-aware Routing**: Keep dependent task sub-types together for tasks like `facial-recognition` and `ocr`
 - **CLIP Split Routing**: Route `clip.textual` and `clip.visual` independently when they should run on different backends
+- **Per-route Policy**: Configure each task/modelType route as `strict` or `fallback`
 - **Round-robin Load Balancing**: Distribute requests across healthy backends for each routed task
 - **Health Monitoring**: Continuous health checking with automatic failover
 - **Concurrent Processing**: Process independent dispatch groups in parallel for improved performance
@@ -26,19 +27,20 @@ Checks the health status of all configured backends and verifies that each route
 - Checks health of all backends in parallel by calling their `/ping` endpoint
 - Updates health status for each backend based on response
 - Verifies that the default backend is healthy (handles all non-routed types)
-- Verifies that each task in `taskRouting` has at least one healthy backend
-- Verifies that each configured CLIP `modelTypeRouting` target is healthy
+- Verifies strict task routes in `taskRouting` have a healthy backend
+- Verifies strict CLIP `modelTypeRouting` targets are healthy
+- Allows fallback routes to degrade to `defaultBackend` when their routed backend is unhealthy
 
 **Response**:
 - Returns `"pong"` with HTTP 200 if:
   - Default backend is healthy
-  - Every task in `taskRouting` has at least one healthy backend
-  - Every configured CLIP `modelTypeRouting` target is healthy
+- Every strict task route in `taskRouting` has at least one healthy backend
+- Every strict CLIP `modelTypeRouting` target is healthy
 - Returns HTTP 503 (Service Unavailable) if:
   - No backends are configured
   - Default backend is unhealthy
-  - Any task in `taskRouting` lacks healthy backends
-  - Any configured CLIP `modelTypeRouting` target is unhealthy
+- Any strict task route in `taskRouting` lacks healthy backends
+- Any strict CLIP `modelTypeRouting` target is unhealthy
 
 ### POST /predict
 Routes inference requests to appropriate backends based on task semantics. Dependent tasks stay grouped, while CLIP can be split by model type and merged back into one response.
@@ -58,7 +60,9 @@ Routes inference requests to appropriate backends based on task semantics. Depen
   - Uses `modelTypeRouting` first for split CLIP requests
   - Falls back to task routing from `taskRouting`
   - Falls back again to `defaultBackend` if no task-specific route exists
-  - Prefers healthy routed backends when available
+  - Applies per-route policy:
+    - `strict`: keep routed backend even when unhealthy
+    - `fallback`: if routed backend is unhealthy, degrade to next fallback level
   - Updates backend health status based on response (200 = healthy, other = unhealthy)
 - Processes dispatch groups concurrently and merges split CLIP responses back into one JSON response
 
@@ -126,6 +130,13 @@ Saves configuration.
   "modelTypeRouting": {
     "textual": "backend2",
     "visual": "backend3"
+  },
+  "taskRoutingPolicy": {
+    "search": "strict"
+  },
+  "modelTypeRoutingPolicy": {
+    "textual": "fallback",
+    "visual": "strict"
   }
 }
 ```
@@ -199,6 +210,14 @@ Configuration is saved in `config.json`:
   "modelTypeRouting": {
     "textual": "backend2",
     "visual": "backend3"
+  },
+  "taskRoutingPolicy": {
+    "clip": "strict",
+    "facial-recognition": "strict"
+  },
+  "modelTypeRoutingPolicy": {
+    "textual": "fallback",
+    "visual": "strict"
   }
 }
 ```
@@ -208,10 +227,14 @@ Configuration is saved in `config.json`:
 - `backends`: List of backend servers with name and URL
 - `taskRouting`: Maps task names to backend names (e.g., `facial-recognition` → `backend1`)
 - `modelTypeRouting`: Maps CLIP model types to backend names (e.g., `textual` → `backend2`)
+- `taskRoutingPolicy`: Optional per-task policy: `strict` or `fallback`
+- `modelTypeRoutingPolicy`: Optional per-modelType policy: `strict` or `fallback`
 
 **Dispatch Rules**:
 - `facial-recognition` and `ocr` stay grouped and are routed using `taskRouting`
 - `clip` can arrive with `textual`, `visual`, or both, and each present model type is routed independently via `modelTypeRouting`, with fallback to `taskRouting["clip"]` and then `defaultBackend`
+- `strict` route policy keeps routed backend even if unhealthy
+- `fallback` route policy degrades to the next fallback level when routed backend is unhealthy
 - All other tasks are routed to the `defaultBackend`
 - Health checks verify the default backend, routed tasks, and configured CLIP model-type routes
 
@@ -335,12 +358,13 @@ immich_ml_proxy/
 2. Keep `facial-recognition` and `ocr` grouped by task so dependent sub-types stay together
 3. Split `clip` into `textual` / `visual` dispatch groups for whichever model types are present
 4. Route split CLIP groups with `modelTypeRouting`, otherwise use `taskRouting`
-5. Fall back to `defaultBackend` when no explicit task route exists
-6. Forward each dispatch group and merge split-task responses back together
+5. Apply route policy (`strict` or `fallback`) at each routing level
+6. Fall back to `defaultBackend` when no explicit route is selected
+7. Forward each dispatch group and merge split-task responses back together
 
 **Health Check Logic**:
 1. Check all backends in parallel via `/ping` endpoint
 2. Verify `defaultBackend` is healthy (required for non-routed types)
-3. Verify each task in `taskRouting` has at least one healthy backend
-4. Verify each configured CLIP `modelTypeRouting` backend is healthy
+3. Verify each strict task route in `taskRouting` has at least one healthy backend
+4. Verify each strict CLIP `modelTypeRouting` backend is healthy
 5. Return healthy only if all conditions are met

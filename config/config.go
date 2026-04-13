@@ -21,6 +21,13 @@ const (
 	HealthStatusUnknown   HealthStatus = "unknown"
 )
 
+type RoutingPolicy string
+
+const (
+	RoutingPolicyStrict   RoutingPolicy = "strict"
+	RoutingPolicyFallback RoutingPolicy = "fallback"
+)
+
 type BackendHealth struct {
 	Status    HealthStatus `json:"status"`
 	LastCheck int64        `json:"lastCheck"` // Unix timestamp
@@ -28,12 +35,14 @@ type BackendHealth struct {
 }
 
 type Config struct {
-	DefaultBackend   string            `json:"defaultBackend"`
-	Backends         []Backend         `json:"backends"`
-	TaskRouting      map[string]string `json:"taskRouting"`      // task -> backend name mapping
-	ModelTypeRouting map[string]string `json:"modelTypeRouting"` // modelType -> backend name mapping (for clip: textual, visual)
-	Health           map[string]BackendHealth `json:"-"`         // backend name -> health status
-	mu               sync.RWMutex
+	DefaultBackend         string                   `json:"defaultBackend"`
+	Backends               []Backend                `json:"backends"`
+	TaskRouting            map[string]string        `json:"taskRouting"`            // task -> backend name mapping
+	ModelTypeRouting       map[string]string        `json:"modelTypeRouting"`       // modelType -> backend name mapping (for clip: textual, visual)
+	TaskRoutingPolicy      map[string]RoutingPolicy `json:"taskRoutingPolicy"`      // task -> routing policy ("strict" | "fallback")
+	ModelTypeRoutingPolicy map[string]RoutingPolicy `json:"modelTypeRoutingPolicy"` // modelType -> routing policy ("strict" | "fallback")
+	Health                 map[string]BackendHealth `json:"-"`                      // backend name -> health status
+	mu                     sync.RWMutex
 }
 
 var (
@@ -45,11 +54,13 @@ var (
 func Load() *Config {
 	once.Do(func() {
 		instance = &Config{
-			DefaultBackend:   "",
-			Backends:         []Backend{},
-			TaskRouting:      make(map[string]string),
-			ModelTypeRouting: make(map[string]string),
-			Health:           make(map[string]BackendHealth),
+			DefaultBackend:         "",
+			Backends:               []Backend{},
+			TaskRouting:            make(map[string]string),
+			ModelTypeRouting:       make(map[string]string),
+			TaskRoutingPolicy:      make(map[string]RoutingPolicy),
+			ModelTypeRoutingPolicy: make(map[string]RoutingPolicy),
+			Health:                 make(map[string]BackendHealth),
 		}
 		instance.loadFromFile()
 	})
@@ -75,12 +86,20 @@ func (c *Config) loadFromFile() {
 	c.Backends = cfg.Backends
 	c.TaskRouting = normalizeTaskRouting(cfg.TaskRouting)
 	c.ModelTypeRouting = cfg.ModelTypeRouting
+	c.TaskRoutingPolicy = normalizeTaskRoutingPolicy(cfg.TaskRoutingPolicy)
+	c.ModelTypeRoutingPolicy = normalizeModelTypeRoutingPolicy(cfg.ModelTypeRoutingPolicy)
 
 	if c.TaskRouting == nil {
 		c.TaskRouting = make(map[string]string)
 	}
 	if c.ModelTypeRouting == nil {
 		c.ModelTypeRouting = make(map[string]string)
+	}
+	if c.TaskRoutingPolicy == nil {
+		c.TaskRoutingPolicy = make(map[string]RoutingPolicy)
+	}
+	if c.ModelTypeRoutingPolicy == nil {
+		c.ModelTypeRoutingPolicy = make(map[string]RoutingPolicy)
 	}
 }
 
@@ -166,11 +185,13 @@ func (c *Config) RemoveBackend(name string) {
 			for task, backendName := range c.TaskRouting {
 				if backendName == name {
 					delete(c.TaskRouting, task)
+					delete(c.TaskRoutingPolicy, task)
 				}
 			}
 			for modelType, backendName := range c.ModelTypeRouting {
 				if backendName == name {
 					delete(c.ModelTypeRouting, modelType)
+					delete(c.ModelTypeRoutingPolicy, modelType)
 				}
 			}
 			// Reset default backend if needed
@@ -194,7 +215,7 @@ func (c *Config) SetDefaultBackend(name string) {
 	c.DefaultBackend = name
 }
 
-func (c *Config) Replace(defaultBackend string, backends []Backend, taskRouting map[string]string, modelTypeRouting map[string]string) {
+func (c *Config) Replace(defaultBackend string, backends []Backend, taskRouting map[string]string, modelTypeRouting map[string]string, taskRoutingPolicy map[string]RoutingPolicy, modelTypeRoutingPolicy map[string]RoutingPolicy) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -206,11 +227,15 @@ func (c *Config) Replace(defaultBackend string, backends []Backend, taskRouting 
 	for modelType, backendName := range modelTypeRouting {
 		modelTypeRoutingCopy[modelType] = backendName
 	}
+	taskRoutingPolicyCopy := normalizeTaskRoutingPolicy(taskRoutingPolicy)
+	modelTypeRoutingPolicyCopy := normalizeModelTypeRoutingPolicy(modelTypeRoutingPolicy)
 
 	c.DefaultBackend = defaultBackend
 	c.Backends = backendsCopy
 	c.TaskRouting = taskRoutingCopy
 	c.ModelTypeRouting = modelTypeRoutingCopy
+	c.TaskRoutingPolicy = taskRoutingPolicyCopy
+	c.ModelTypeRoutingPolicy = modelTypeRoutingPolicyCopy
 }
 
 func (c *Config) ToJSON() ([]byte, error) {
@@ -219,15 +244,19 @@ func (c *Config) ToJSON() ([]byte, error) {
 
 	// Create a copy to avoid modifying the original
 	result := struct {
-		DefaultBackend   string            `json:"defaultBackend"`
-		Backends         []Backend         `json:"backends"`
-		TaskRouting      map[string]string `json:"taskRouting"`
-		ModelTypeRouting map[string]string `json:"modelTypeRouting"`
+		DefaultBackend         string                   `json:"defaultBackend"`
+		Backends               []Backend                `json:"backends"`
+		TaskRouting            map[string]string        `json:"taskRouting"`
+		ModelTypeRouting       map[string]string        `json:"modelTypeRouting"`
+		TaskRoutingPolicy      map[string]RoutingPolicy `json:"taskRoutingPolicy"`
+		ModelTypeRoutingPolicy map[string]RoutingPolicy `json:"modelTypeRoutingPolicy"`
 	}{
-		DefaultBackend:   c.DefaultBackend,
-		Backends:         c.Backends,
-		TaskRouting:      normalizeTaskRouting(c.TaskRouting),
-		ModelTypeRouting: c.ModelTypeRouting,
+		DefaultBackend:         c.DefaultBackend,
+		Backends:               c.Backends,
+		TaskRouting:            normalizeTaskRouting(c.TaskRouting),
+		ModelTypeRouting:       c.ModelTypeRouting,
+		TaskRoutingPolicy:      normalizeTaskRoutingPolicy(c.TaskRoutingPolicy),
+		ModelTypeRoutingPolicy: normalizeModelTypeRoutingPolicy(c.ModelTypeRoutingPolicy),
 	}
 
 	// Ensure maps are not nil
@@ -236,6 +265,12 @@ func (c *Config) ToJSON() ([]byte, error) {
 	}
 	if result.ModelTypeRouting == nil {
 		result.ModelTypeRouting = make(map[string]string)
+	}
+	if result.TaskRoutingPolicy == nil {
+		result.TaskRoutingPolicy = make(map[string]RoutingPolicy)
+	}
+	if result.ModelTypeRoutingPolicy == nil {
+		result.ModelTypeRoutingPolicy = make(map[string]RoutingPolicy)
 	}
 
 	return json.MarshalIndent(result, "", "  ")
@@ -396,6 +431,31 @@ func (c *Config) GetBackendByModelType(modelType string) *Backend {
 	return nil
 }
 
+// GetTaskRoutingPolicy returns routing policy for a task.
+// Unknown or invalid values default to strict.
+func (c *Config) GetTaskRoutingPolicy(task string) RoutingPolicy {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	task = tasks.NormalizeTaskName(task)
+	if policy, ok := c.TaskRoutingPolicy[task]; ok {
+		return normalizeRoutingPolicy(policy)
+	}
+	return RoutingPolicyStrict
+}
+
+// GetModelTypeRoutingPolicy returns routing policy for a modelType.
+// Unknown or invalid values default to strict.
+func (c *Config) GetModelTypeRoutingPolicy(modelType string) RoutingPolicy {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	if policy, ok := c.ModelTypeRoutingPolicy[modelType]; ok {
+		return normalizeRoutingPolicy(policy)
+	}
+	return RoutingPolicyStrict
+}
+
 // GetAllModelTypes returns all model types with explicit routing.
 func (c *Config) GetAllModelTypes() []string {
 	c.mu.RLock()
@@ -418,4 +478,37 @@ func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
 		normalized[tasks.NormalizeTaskName(task)] = backendName
 	}
 	return normalized
+}
+
+func normalizeTaskRoutingPolicy(taskRoutingPolicy map[string]RoutingPolicy) map[string]RoutingPolicy {
+	if taskRoutingPolicy == nil {
+		return make(map[string]RoutingPolicy)
+	}
+
+	normalized := make(map[string]RoutingPolicy, len(taskRoutingPolicy))
+	for task, policy := range taskRoutingPolicy {
+		normalized[tasks.NormalizeTaskName(task)] = normalizeRoutingPolicy(policy)
+	}
+	return normalized
+}
+
+func normalizeModelTypeRoutingPolicy(modelTypeRoutingPolicy map[string]RoutingPolicy) map[string]RoutingPolicy {
+	if modelTypeRoutingPolicy == nil {
+		return make(map[string]RoutingPolicy)
+	}
+
+	normalized := make(map[string]RoutingPolicy, len(modelTypeRoutingPolicy))
+	for modelType, policy := range modelTypeRoutingPolicy {
+		normalized[modelType] = normalizeRoutingPolicy(policy)
+	}
+	return normalized
+}
+
+func normalizeRoutingPolicy(policy RoutingPolicy) RoutingPolicy {
+	switch policy {
+	case RoutingPolicyFallback:
+		return RoutingPolicyFallback
+	default:
+		return RoutingPolicyStrict
+	}
 }

@@ -111,6 +111,24 @@ func TestNormalizeTaskRoutingAndValidateRoutingBackends(t *testing.T) {
 	if err := validateRoutingBackends(backends, routing, map[string]string{"visual": "missing"}); err == nil {
 		t.Fatal("expected unknown modelType backend to fail validation")
 	}
+	if err := validateRoutingPolicies(
+		map[string]config.RoutingPolicy{tasks.OCRTask: config.RoutingPolicyFallback},
+		map[string]config.RoutingPolicy{"visual": config.RoutingPolicyStrict},
+	); err != nil {
+		t.Fatalf("expected valid routing policies, got %v", err)
+	}
+	if err := validateRoutingPolicies(
+		map[string]config.RoutingPolicy{tasks.OCRTask: config.RoutingPolicy("invalid")},
+		map[string]config.RoutingPolicy{},
+	); err == nil {
+		t.Fatal("expected invalid task routing policy to fail validation")
+	}
+	if err := validateRoutingPolicies(
+		map[string]config.RoutingPolicy{},
+		map[string]config.RoutingPolicy{"visual": config.RoutingPolicy("invalid")},
+	); err == nil {
+		t.Fatal("expected invalid modelType routing policy to fail validation")
+	}
 	if err := validateBackendDefinitions(backends); err != nil {
 		t.Fatalf("expected unique backend definitions to be valid, got %v", err)
 	}
@@ -179,6 +197,96 @@ func TestSelectBackendForDispatchGroup(t *testing.T) {
 	}); err == nil {
 		t.Fatal("expected missing backend configuration to fail")
 	}
+}
+
+func TestSelectBackendForDispatchGroupPolicies(t *testing.T) {
+	t.Run("modelType fallback policy uses default when routed backend is unhealthy", func(t *testing.T) {
+		setTestConfig(t, &config.Config{
+			DefaultBackend: "default",
+			Backends: []config.Backend{
+				{Name: "default", URL: "http://default"},
+				{Name: "gpu", URL: "http://gpu"},
+			},
+			ModelTypeRouting: map[string]string{
+				"textual": "gpu",
+			},
+			ModelTypeRoutingPolicy: map[string]config.RoutingPolicy{
+				"textual": config.RoutingPolicyFallback,
+			},
+			Health: map[string]config.BackendHealth{
+				"default": {Status: config.HealthStatusHealthy},
+				"gpu":     {Status: config.HealthStatusUnhealthy},
+			},
+		})
+
+		backend, err := selectBackendForDispatchGroup(proxy.DispatchGroup{
+			Key:   "clip:textual",
+			Task:  tasks.ClipTask,
+			Type:  "textual",
+			Split: true,
+		})
+		if err != nil || backend.Name != "default" {
+			t.Fatalf("expected fallback to default backend, got backend=%+v err=%v", backend, err)
+		}
+	})
+
+	t.Run("modelType strict policy keeps routed backend even when unhealthy", func(t *testing.T) {
+		setTestConfig(t, &config.Config{
+			DefaultBackend: "default",
+			Backends: []config.Backend{
+				{Name: "default", URL: "http://default"},
+				{Name: "gpu", URL: "http://gpu"},
+			},
+			ModelTypeRouting: map[string]string{
+				"textual": "gpu",
+			},
+			ModelTypeRoutingPolicy: map[string]config.RoutingPolicy{
+				"textual": config.RoutingPolicyStrict,
+			},
+			Health: map[string]config.BackendHealth{
+				"default": {Status: config.HealthStatusHealthy},
+				"gpu":     {Status: config.HealthStatusUnhealthy},
+			},
+		})
+
+		backend, err := selectBackendForDispatchGroup(proxy.DispatchGroup{
+			Key:   "clip:textual",
+			Task:  tasks.ClipTask,
+			Type:  "textual",
+			Split: true,
+		})
+		if err != nil || backend.Name != "gpu" {
+			t.Fatalf("expected strict policy to keep routed backend, got backend=%+v err=%v", backend, err)
+		}
+	})
+
+	t.Run("task fallback policy uses default when routed backend is unhealthy", func(t *testing.T) {
+		setTestConfig(t, &config.Config{
+			DefaultBackend: "default",
+			Backends: []config.Backend{
+				{Name: "default", URL: "http://default"},
+				{Name: "ocr", URL: "http://ocr"},
+			},
+			TaskRouting: map[string]string{
+				tasks.OCRTask: "ocr",
+			},
+			TaskRoutingPolicy: map[string]config.RoutingPolicy{
+				tasks.OCRTask: config.RoutingPolicyFallback,
+			},
+			Health: map[string]config.BackendHealth{
+				"default": {Status: config.HealthStatusHealthy},
+				"ocr":     {Status: config.HealthStatusUnhealthy},
+			},
+		})
+
+		backend, err := selectBackendForDispatchGroup(proxy.DispatchGroup{
+			Key:  tasks.OCRTask,
+			Task: tasks.OCRTask,
+		})
+		if err != nil || backend.Name != "default" {
+			t.Fatalf("expected fallback to default backend, got backend=%+v err=%v", backend, err)
+		}
+	})
 }
 
 func TestDebugAPIHandlers(t *testing.T) {

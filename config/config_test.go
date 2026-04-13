@@ -9,9 +9,11 @@ import (
 
 func newTestConfig() *Config {
 	return &Config{
-		TaskRouting:      make(map[string]string),
-		ModelTypeRouting: make(map[string]string),
-		Health:           make(map[string]BackendHealth),
+		TaskRouting:            make(map[string]string),
+		ModelTypeRouting:       make(map[string]string),
+		TaskRoutingPolicy:      make(map[string]RoutingPolicy),
+		ModelTypeRoutingPolicy: make(map[string]RoutingPolicy),
+		Health:                 make(map[string]BackendHealth),
 	}
 }
 
@@ -65,6 +67,12 @@ func TestConfigHealthAndQueryAccessors(t *testing.T) {
 		ModelTypeRouting: map[string]string{
 			"visual": "visual",
 		},
+		TaskRoutingPolicy: map[string]RoutingPolicy{
+			tasks.OCRTask: RoutingPolicyFallback,
+		},
+		ModelTypeRoutingPolicy: map[string]RoutingPolicy{
+			"visual": RoutingPolicyFallback,
+		},
 		Health: make(map[string]BackendHealth),
 	}
 
@@ -99,6 +107,18 @@ func TestConfigHealthAndQueryAccessors(t *testing.T) {
 	if got := cfg.GetBackendByModelType("visual"); got == nil || got.Name != "visual" {
 		t.Fatalf("expected modelType backend, got %+v", got)
 	}
+	if got := cfg.GetTaskRoutingPolicy(tasks.OCRTask); got != RoutingPolicyFallback {
+		t.Fatalf("expected task routing policy fallback, got %q", got)
+	}
+	if got := cfg.GetTaskRoutingPolicy(tasks.ClipTask); got != RoutingPolicyStrict {
+		t.Fatalf("expected unknown task policy to default strict, got %q", got)
+	}
+	if got := cfg.GetModelTypeRoutingPolicy("visual"); got != RoutingPolicyFallback {
+		t.Fatalf("expected modelType routing policy fallback, got %q", got)
+	}
+	if got := cfg.GetModelTypeRoutingPolicy("textual"); got != RoutingPolicyStrict {
+		t.Fatalf("expected unknown modelType policy to default strict, got %q", got)
+	}
 	if got := cfg.GetAllTasks(); len(got) != 1 || got[0] != tasks.OCRTask {
 		t.Fatalf("expected one routed task, got %#v", got)
 	}
@@ -122,12 +142,20 @@ func TestConfigReplaceAndToJSON(t *testing.T) {
 	modelTypeRouting := map[string]string{
 		"visual": "ocr",
 	}
+	taskRoutingPolicy := map[string]RoutingPolicy{
+		tasks.LegacyFacialRecognitionTask: RoutingPolicyFallback,
+	}
+	modelTypeRoutingPolicy := map[string]RoutingPolicy{
+		"visual": RoutingPolicyFallback,
+	}
 
-	cfg.Replace("default", backends, taskRouting, modelTypeRouting)
+	cfg.Replace("default", backends, taskRouting, modelTypeRouting, taskRoutingPolicy, modelTypeRoutingPolicy)
 
 	backends[0].Name = "changed"
 	taskRouting[tasks.ClipTask] = "default"
 	modelTypeRouting["textual"] = "default"
+	taskRoutingPolicy[tasks.ClipTask] = RoutingPolicyFallback
+	modelTypeRoutingPolicy["textual"] = RoutingPolicyFallback
 
 	if cfg.Backends[0].Name != "default" {
 		t.Fatalf("expected Replace to copy backends, got %#v", cfg.Backends)
@@ -138,6 +166,12 @@ func TestConfigReplaceAndToJSON(t *testing.T) {
 	if _, exists := cfg.ModelTypeRouting["textual"]; exists {
 		t.Fatalf("did not expect later modelType mutations to leak into config, got %#v", cfg.ModelTypeRouting)
 	}
+	if _, exists := cfg.TaskRoutingPolicy[tasks.ClipTask]; exists {
+		t.Fatalf("did not expect later task policy mutations to leak into config, got %#v", cfg.TaskRoutingPolicy)
+	}
+	if _, exists := cfg.ModelTypeRoutingPolicy["textual"]; exists {
+		t.Fatalf("did not expect later modelType policy mutations to leak into config, got %#v", cfg.ModelTypeRoutingPolicy)
+	}
 
 	data, err := cfg.ToJSON()
 	if err != nil {
@@ -145,9 +179,11 @@ func TestConfigReplaceAndToJSON(t *testing.T) {
 	}
 
 	var decoded struct {
-		DefaultBackend   string            `json:"defaultBackend"`
-		TaskRouting      map[string]string `json:"taskRouting"`
-		ModelTypeRouting map[string]string `json:"modelTypeRouting"`
+		DefaultBackend         string                   `json:"defaultBackend"`
+		TaskRouting            map[string]string        `json:"taskRouting"`
+		ModelTypeRouting       map[string]string        `json:"modelTypeRouting"`
+		TaskRoutingPolicy      map[string]RoutingPolicy `json:"taskRoutingPolicy"`
+		ModelTypeRoutingPolicy map[string]RoutingPolicy `json:"modelTypeRoutingPolicy"`
 	}
 	if err := json.Unmarshal(data, &decoded); err != nil {
 		t.Fatalf("decode config json: %v", err)
@@ -161,6 +197,12 @@ func TestConfigReplaceAndToJSON(t *testing.T) {
 	}
 	if got := decoded.ModelTypeRouting["visual"]; got != "ocr" {
 		t.Fatalf("expected modelType routing in json, got %#v", decoded.ModelTypeRouting)
+	}
+	if got := decoded.TaskRoutingPolicy[tasks.FacialRecognitionTask]; got != RoutingPolicyFallback {
+		t.Fatalf("expected normalized task policy in json, got %#v", decoded.TaskRoutingPolicy)
+	}
+	if got := decoded.ModelTypeRoutingPolicy["visual"]; got != RoutingPolicyFallback {
+		t.Fatalf("expected modelType policy in json, got %#v", decoded.ModelTypeRoutingPolicy)
 	}
 
 	if got := normalizeTaskRouting(nil); len(got) != 0 {

@@ -90,12 +90,16 @@ func PingHandler(c *gin.Context) {
 		return
 	}
 
-	// Check if each routed task has at least one healthy backend
+	// Check if each routed task has at least one healthy backend.
+	// fallback policy allows this route to degrade to default backend.
 	allTasksHealthy := true
 
 	for _, taskName := range cfg.GetAllTasks() {
 		healthyBackends := cfg.GetHealthyBackendsByTask(taskName)
 		if len(healthyBackends) == 0 {
+			if cfg.GetTaskRoutingPolicy(taskName) == config.RoutingPolicyFallback {
+				continue
+			}
 			allTasksHealthy = false
 			break
 		}
@@ -107,13 +111,20 @@ func PingHandler(c *gin.Context) {
 	}
 
 	for _, modelType := range cfg.GetAllModelTypes() {
+		policy := cfg.GetModelTypeRoutingPolicy(modelType)
 		backend := cfg.GetBackendByModelType(modelType)
 		if backend == nil {
+			if policy == config.RoutingPolicyFallback {
+				continue
+			}
 			c.Status(http.StatusServiceUnavailable)
 			return
 		}
 		backendHealth := cfg.GetHealthStatus(backend.Name)
 		if backendHealth.Status != config.HealthStatusHealthy {
+			if policy == config.RoutingPolicyFallback {
+				continue
+			}
 			c.Status(http.StatusServiceUnavailable)
 			return
 		}
@@ -287,17 +298,38 @@ func cloneHeaderWithContentType(src http.Header, contentType string) http.Header
 func selectBackendForDispatchGroup(group proxy.DispatchGroup) (*config.Backend, error) {
 	if group.Split {
 		if backend := cfg.GetBackendByModelType(group.Type); backend != nil {
-			return backend, nil
+			if cfg.GetModelTypeRoutingPolicy(group.Type) == config.RoutingPolicyFallback {
+				backendHealth := cfg.GetHealthStatus(backend.Name)
+				// Unknown is treated as potentially available; only explicit unhealthy falls back.
+				if backendHealth.Status != config.HealthStatusUnhealthy {
+					return backend, nil
+				}
+			} else {
+				return backend, nil
+			}
 		}
 	}
 
 	healthyBackends := cfg.GetHealthyBackendsByTask(group.Task)
 	allBackends := cfg.GetBackendsByTask(group.Task)
+	taskPolicy := cfg.GetTaskRoutingPolicy(group.Task)
 
 	if len(allBackends) > 0 {
 		candidates := allBackends
 		if len(healthyBackends) > 0 {
 			candidates = healthyBackends
+		} else if taskPolicy == config.RoutingPolicyFallback {
+			allExplicitlyUnhealthy := true
+			for _, backend := range allBackends {
+				backendHealth := cfg.GetHealthStatus(backend.Name)
+				if backendHealth.Status != config.HealthStatusUnhealthy {
+					allExplicitlyUnhealthy = false
+					break
+				}
+			}
+			if allExplicitlyUnhealthy {
+				candidates = []config.Backend{}
+			}
 		}
 
 		backendList := make([]string, 0, len(candidates))
@@ -363,6 +395,14 @@ func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
 	return normalized
 }
 
+func normalizeTaskRoutingPolicy(taskRoutingPolicy map[string]config.RoutingPolicy) map[string]config.RoutingPolicy {
+	normalized := make(map[string]config.RoutingPolicy)
+	for taskName, policy := range taskRoutingPolicy {
+		normalized[tasks.NormalizeTaskName(taskName)] = policy
+	}
+	return normalized
+}
+
 func validateRoutingBackends(backends []config.Backend, taskRouting map[string]string, modelTypeRouting map[string]string) error {
 	backendNames := make(map[string]struct{}, len(backends))
 	for _, backend := range backends {
@@ -378,6 +418,22 @@ func validateRoutingBackends(backends []config.Backend, taskRouting map[string]s
 	for modelType, backendName := range modelTypeRouting {
 		if _, exists := backendNames[backendName]; !exists {
 			return fmt.Errorf("modelType routing for %s references unknown backend %s", modelType, backendName)
+		}
+	}
+
+	return nil
+}
+
+func validateRoutingPolicies(taskRoutingPolicy map[string]config.RoutingPolicy, modelTypeRoutingPolicy map[string]config.RoutingPolicy) error {
+	for taskName, policy := range taskRoutingPolicy {
+		if policy != config.RoutingPolicyStrict && policy != config.RoutingPolicyFallback {
+			return fmt.Errorf("task routing policy for %s is invalid: %s", taskName, policy)
+		}
+	}
+
+	for modelType, policy := range modelTypeRoutingPolicy {
+		if policy != config.RoutingPolicyStrict && policy != config.RoutingPolicyFallback {
+			return fmt.Errorf("modelType routing policy for %s is invalid: %s", modelType, policy)
 		}
 	}
 
@@ -421,10 +477,12 @@ func HealthAPIGetHandler(c *gin.Context) {
 
 // ConfigPostHandler handles POST /api/config - saves configuration
 type ConfigRequest struct {
-	DefaultBackend   string            `json:"defaultBackend"`
-	Backends         []config.Backend  `json:"backends"`
-	TaskRouting      map[string]string `json:"taskRouting"`
-	ModelTypeRouting map[string]string `json:"modelTypeRouting"`
+	DefaultBackend         string                          `json:"defaultBackend"`
+	Backends               []config.Backend                `json:"backends"`
+	TaskRouting            map[string]string               `json:"taskRouting"`
+	ModelTypeRouting       map[string]string               `json:"modelTypeRouting"`
+	TaskRoutingPolicy      map[string]config.RoutingPolicy `json:"taskRoutingPolicy"`
+	ModelTypeRoutingPolicy map[string]config.RoutingPolicy `json:"modelTypeRoutingPolicy"`
 }
 
 func ConfigPostHandler(c *gin.Context) {
@@ -478,6 +536,11 @@ func ConfigPostHandler(c *gin.Context) {
 	if modelTypeRouting == nil {
 		modelTypeRouting = make(map[string]string)
 	}
+	taskRoutingPolicy := normalizeTaskRoutingPolicy(req.TaskRoutingPolicy)
+	modelTypeRoutingPolicy := req.ModelTypeRoutingPolicy
+	if modelTypeRoutingPolicy == nil {
+		modelTypeRoutingPolicy = make(map[string]config.RoutingPolicy)
+	}
 
 	if err := validateRoutingBackends(req.Backends, normalizedTaskRouting, modelTypeRouting); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -485,9 +548,15 @@ func ConfigPostHandler(c *gin.Context) {
 		})
 		return
 	}
+	if err := validateRoutingPolicies(taskRoutingPolicy, modelTypeRoutingPolicy); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{
+			"error": err.Error(),
+		})
+		return
+	}
 
 	// Update config atomically so requests do not observe a partially-written config.
-	cfg.Replace(req.DefaultBackend, req.Backends, normalizedTaskRouting, modelTypeRouting)
+	cfg.Replace(req.DefaultBackend, req.Backends, normalizedTaskRouting, modelTypeRouting, taskRoutingPolicy, modelTypeRoutingPolicy)
 
 	// Save to file
 	if err := cfg.Save(); err != nil {
