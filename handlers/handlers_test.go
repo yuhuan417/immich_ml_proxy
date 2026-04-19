@@ -3,10 +3,13 @@ package handlers
 import (
 	"bytes"
 	"encoding/json"
+	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"reflect"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"immich_ml_proxy/config"
@@ -16,6 +19,26 @@ import (
 
 	"github.com/gin-gonic/gin"
 )
+
+func buildPredictRequest(t *testing.T, entriesJSON string) *http.Request {
+	t.Helper()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	if err := writer.WriteField("entries", entriesJSON); err != nil {
+		t.Fatalf("write entries field: %v", err)
+	}
+	if err := writer.WriteField("note", "keep-me"); err != nil {
+		t.Fatalf("write note field: %v", err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatalf("close multipart writer: %v", err)
+	}
+
+	req := httptest.NewRequest(http.MethodPost, "/predict", bytes.NewReader(body.Bytes()))
+	req.Header.Set("Content-Type", writer.FormDataContentType())
+	return req
+}
 
 func setTestConfig(t *testing.T, testCfg *config.Config) {
 	t.Helper()
@@ -287,6 +310,242 @@ func TestSelectBackendForDispatchGroupPolicies(t *testing.T) {
 			t.Fatalf("expected fallback to default backend, got backend=%+v err=%v", backend, err)
 		}
 	})
+}
+
+func TestPredictHandlerModelTypeFailureFallsBackToTaskRoute(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var gpuCalls atomic.Int32
+	gpuServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gpuCalls.Add(1)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("parse gpu request: %v", err)
+		}
+		if got := r.FormValue("entries"); got != `{"clip":{"textual":"hello"}}` {
+			t.Fatalf("unexpected gpu entries payload: %q", got)
+		}
+		http.Error(w, "gpu down", http.StatusBadGateway)
+	}))
+	defer gpuServer.Close()
+
+	var taskCalls atomic.Int32
+	taskServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		taskCalls.Add(1)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("parse task request: %v", err)
+		}
+		if got := r.FormValue("entries"); got != `{"clip":{"textual":"hello"}}` {
+			t.Fatalf("unexpected task entries payload: %q", got)
+		}
+		_, _ = io.WriteString(w, `{"clip":{"textual":"task-result"}}`)
+	}))
+	defer taskServer.Close()
+
+	var defaultCalls atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalls.Add(1)
+		_, _ = io.WriteString(w, `{"clip":{"textual":"default-result"}}`)
+	}))
+	defer defaultServer.Close()
+
+	setTestConfig(t, &config.Config{
+		DefaultBackend: "default",
+		Backends: []config.Backend{
+			{Name: "default", URL: defaultServer.URL},
+			{Name: "clip-task", URL: taskServer.URL},
+			{Name: "gpu", URL: gpuServer.URL},
+		},
+		TaskRouting: map[string]string{
+			tasks.ClipTask: "clip-task",
+		},
+		ModelTypeRouting: map[string]string{
+			"textual": "gpu",
+		},
+		TaskRoutingPolicy: map[string]config.RoutingPolicy{
+			tasks.ClipTask: config.RoutingPolicyStrict,
+		},
+		ModelTypeRoutingPolicy: map[string]config.RoutingPolicy{
+			"textual": config.RoutingPolicyFallback,
+		},
+		Health: make(map[string]config.BackendHealth),
+	})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = buildPredictRequest(t, `{"clip":{"textual":"hello"}}`)
+
+	PredictHandler(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var result map[string]map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := result[tasks.ClipTask]["textual"]; got != "task-result" {
+		t.Fatalf("expected task fallback result, got %#v", result)
+	}
+	if got := gpuCalls.Load(); got != 1 {
+		t.Fatalf("expected gpu backend to be tried once, got %d", got)
+	}
+	if got := taskCalls.Load(); got != 1 {
+		t.Fatalf("expected task backend to be tried once, got %d", got)
+	}
+	if got := defaultCalls.Load(); got != 0 {
+		t.Fatalf("did not expect default backend to be used, got %d calls", got)
+	}
+	if got := cfg.GetHealthStatus("gpu").Status; got != config.HealthStatusUnhealthy {
+		t.Fatalf("expected gpu backend to be marked unhealthy, got %q", got)
+	}
+	if got := cfg.GetHealthStatus("clip-task").Status; got != config.HealthStatusHealthy {
+		t.Fatalf("expected task backend to be marked healthy, got %q", got)
+	}
+}
+
+func TestPredictHandlerTaskFailureFallsBackToDefault(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var taskCalls atomic.Int32
+	taskServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		taskCalls.Add(1)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("parse task request: %v", err)
+		}
+		if got := r.FormValue("entries"); got != `{"ocr":{"text":"scan-me"}}` {
+			t.Fatalf("unexpected task entries payload: %q", got)
+		}
+		http.Error(w, "ocr busy", http.StatusServiceUnavailable)
+	}))
+	defer taskServer.Close()
+
+	var defaultCalls atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalls.Add(1)
+		if err := r.ParseMultipartForm(32 << 20); err != nil {
+			t.Fatalf("parse default request: %v", err)
+		}
+		if got := r.FormValue("entries"); got != `{"ocr":{"text":"scan-me"}}` {
+			t.Fatalf("unexpected default entries payload: %q", got)
+		}
+		_, _ = io.WriteString(w, `{"ocr":{"text":"default-result"}}`)
+	}))
+	defer defaultServer.Close()
+
+	setTestConfig(t, &config.Config{
+		DefaultBackend: "default",
+		Backends: []config.Backend{
+			{Name: "default", URL: defaultServer.URL},
+			{Name: "ocr", URL: taskServer.URL},
+		},
+		TaskRouting: map[string]string{
+			tasks.OCRTask: "ocr",
+		},
+		TaskRoutingPolicy: map[string]config.RoutingPolicy{
+			tasks.OCRTask: config.RoutingPolicyFallback,
+		},
+		Health: make(map[string]config.BackendHealth),
+	})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = buildPredictRequest(t, `{"ocr":{"text":"scan-me"}}`)
+
+	PredictHandler(context)
+
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("expected status 200, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+
+	var result map[string]map[string]string
+	if err := json.Unmarshal(recorder.Body.Bytes(), &result); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if got := result[tasks.OCRTask]["text"]; got != "default-result" {
+		t.Fatalf("expected default fallback result, got %#v", result)
+	}
+	if got := taskCalls.Load(); got != 1 {
+		t.Fatalf("expected task backend to be tried once, got %d", got)
+	}
+	if got := defaultCalls.Load(); got != 1 {
+		t.Fatalf("expected default backend to be tried once, got %d", got)
+	}
+	if got := cfg.GetHealthStatus("ocr").Status; got != config.HealthStatusUnhealthy {
+		t.Fatalf("expected task backend to be marked unhealthy, got %q", got)
+	}
+	if got := cfg.GetHealthStatus("default").Status; got != config.HealthStatusHealthy {
+		t.Fatalf("expected default backend to be marked healthy, got %q", got)
+	}
+}
+
+func TestPredictHandlerStrictRouteDoesNotFallbackAfterFailure(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var strictCalls atomic.Int32
+	strictServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		strictCalls.Add(1)
+		http.Error(w, "strict backend failed", http.StatusBadGateway)
+	}))
+	defer strictServer.Close()
+
+	var taskCalls atomic.Int32
+	taskServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		taskCalls.Add(1)
+		_, _ = io.WriteString(w, `{"clip":{"textual":"task-result"}}`)
+	}))
+	defer taskServer.Close()
+
+	var defaultCalls atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalls.Add(1)
+		_, _ = io.WriteString(w, `{"clip":{"textual":"default-result"}}`)
+	}))
+	defer defaultServer.Close()
+
+	setTestConfig(t, &config.Config{
+		DefaultBackend: "default",
+		Backends: []config.Backend{
+			{Name: "default", URL: defaultServer.URL},
+			{Name: "clip-task", URL: taskServer.URL},
+			{Name: "gpu", URL: strictServer.URL},
+		},
+		TaskRouting: map[string]string{
+			tasks.ClipTask: "clip-task",
+		},
+		ModelTypeRouting: map[string]string{
+			"textual": "gpu",
+		},
+		TaskRoutingPolicy: map[string]config.RoutingPolicy{
+			tasks.ClipTask: config.RoutingPolicyFallback,
+		},
+		ModelTypeRoutingPolicy: map[string]config.RoutingPolicy{
+			"textual": config.RoutingPolicyStrict,
+		},
+		Health: make(map[string]config.BackendHealth),
+	})
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = buildPredictRequest(t, `{"clip":{"textual":"hello"}}`)
+
+	PredictHandler(context)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected status 500, got %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	if !strings.Contains(recorder.Body.String(), "strict backend failed") {
+		t.Fatalf("expected error response to mention strict backend failure, got %q", recorder.Body.String())
+	}
+	if got := strictCalls.Load(); got != 1 {
+		t.Fatalf("expected strict backend to be tried once, got %d", got)
+	}
+	if got := taskCalls.Load(); got != 0 {
+		t.Fatalf("did not expect task fallback after strict failure, got %d calls", got)
+	}
+	if got := defaultCalls.Load(); got != 0 {
+		t.Fatalf("did not expect default fallback after strict failure, got %d calls", got)
+	}
 }
 
 func TestDebugAPIHandlers(t *testing.T) {

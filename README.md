@@ -61,8 +61,8 @@ Routes inference requests to appropriate backends based on task semantics. Depen
   - Falls back to task routing from `taskRouting`
   - Falls back again to `defaultBackend` if no task-specific route exists
   - Applies per-route policy:
-    - `strict`: keep routed backend even when unhealthy
-    - `fallback`: if routed backend is unhealthy, degrade to next fallback level
+    - `strict`: keep routed backend even when unhealthy or when the request fails
+    - `fallback`: if routed backend is unhealthy or the request fails, degrade to the next fallback level within the same request
   - Updates backend health status based on response (200 = healthy, other = unhealthy)
 - Processes dispatch groups concurrently and merges split CLIP responses back into one JSON response
 
@@ -233,8 +233,8 @@ Configuration is saved in `config.json`:
 **Dispatch Rules**:
 - `facial-recognition` and `ocr` stay grouped and are routed using `taskRouting`
 - `clip` can arrive with `textual`, `visual`, or both, and each present model type is routed independently via `modelTypeRouting`, with fallback to `taskRouting["clip"]` and then `defaultBackend`
-- `strict` route policy keeps routed backend even if unhealthy
-- `fallback` route policy degrades to the next fallback level when routed backend is unhealthy
+- `strict` route policy keeps routed backend even if unhealthy or the request fails
+- `fallback` route policy degrades to the next fallback level when routed backend is unhealthy or the request fails
 - All other tasks are routed to the `defaultBackend`
 - Health checks verify the default backend, routed tasks, and configured CLIP model-type routes
 

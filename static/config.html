@@ -662,7 +662,7 @@
                 <div class="panel-header">
                     <div>
                         <h2 id="taskRoutingTitle" class="panel-title">Task Routing</h2>
-                        <p class="panel-subtitle">Use task routing for grouped requests such as <code>facial-recognition</code> and <code>ocr</code>. Policy <code>strict</code> always uses routed backend; <code>fallback</code> can degrade to default backend when unhealthy. Legacy <code>facial_recognition</code> input is normalized automatically.</p>
+                        <p class="panel-subtitle">Use task routing for grouped requests such as <code>facial-recognition</code> and <code>ocr</code>. Policy <code>strict</code> always uses the routed backend; <code>fallback</code> can step down to the next routing level when that backend is unhealthy or the request fails. Legacy <code>facial_recognition</code> input is normalized automatically.</p>
                     </div>
                 </div>
                 <div class="helper-list" aria-hidden="true">
@@ -697,7 +697,7 @@
                 <div class="panel-header">
                     <div>
                         <h2 id="modelRoutingTitle" class="panel-title">CLIP ModelType Routing</h2>
-                        <p class="panel-subtitle">Only CLIP is split by modelType. Missing modelType routes fall back to task routing and then the default backend. Policy <code>strict</code> forces routed backend; <code>fallback</code> allows unhealthy route to degrade.</p>
+                        <p class="panel-subtitle">Only CLIP is split by modelType. Missing modelType routes fall back to task routing and then the default backend. Policy <code>strict</code> forces the routed backend; <code>fallback</code> retries the next routing level when a routed backend is unhealthy or the request fails.</p>
                     </div>
                 </div>
                 <div class="helper-list" aria-hidden="true">

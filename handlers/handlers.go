@@ -1,7 +1,6 @@
 package handlers
 
 import (
-	"bytes"
 	"encoding/json"
 	"fmt"
 	"immich_ml_proxy/config"
@@ -10,12 +9,18 @@ import (
 	"immich_ml_proxy/tasks"
 	"io"
 	"net/http"
+	"strings"
 	"sync"
 
 	"github.com/gin-gonic/gin"
 )
 
 var cfg *config.Config
+
+type dispatchAttempt struct {
+	backend           config.Backend
+	continueOnFailure bool
+}
 
 func Init(c *config.Config) {
 	cfg = c
@@ -179,14 +184,6 @@ func PredictHandler(c *gin.Context) {
 				return
 			}
 
-			selectedBackend, err := selectBackendForDispatchGroup(g)
-			if err != nil {
-				resultMutex.Lock()
-				groupErrors[g.Key] = err
-				resultMutex.Unlock()
-				return
-			}
-
 			entriesJSON, err := json.Marshal(entriesForGroup)
 			if err != nil {
 				resultMutex.Lock()
@@ -195,58 +192,8 @@ func PredictHandler(c *gin.Context) {
 				return
 			}
 
-			resp, bodyBytes, outgoingContentType, err := proxy.ForwardPredictRequestWithType(selectedBackend.URL, c.Request, string(entriesJSON))
-			debugHeaders := cloneHeaderWithContentType(c.Request.Header, outgoingContentType)
+			result, err := executeDispatchGroup(c.Request, debugTraceID, g, string(entriesJSON))
 			if err != nil {
-				if debug.GetInstance().IsEnabled() {
-					recordID := debug.GenerateID()
-					debug.GetInstance().RecordOutgoingRequest(recordID, debugTraceID, "POST", selectedBackend.URL+"/predict", debugHeaders, bodyBytes)
-					debug.GetInstance().RecordError(recordID, err)
-				}
-
-				cfg.SetHealthStatus(selectedBackend.Name, config.HealthStatusUnhealthy, err.Error())
-
-				resultMutex.Lock()
-				groupErrors[g.Key] = err
-				resultMutex.Unlock()
-				return
-			}
-			defer resp.Body.Close()
-
-			if resp.StatusCode == http.StatusOK {
-				cfg.SetHealthStatus(selectedBackend.Name, config.HealthStatusHealthy, "")
-			} else {
-				body, _ := io.ReadAll(resp.Body)
-				cfg.SetHealthStatus(selectedBackend.Name, config.HealthStatusUnhealthy, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)))
-				resp.Body = io.NopCloser(bytes.NewReader(body))
-			}
-
-			if debug.GetInstance().IsEnabled() {
-				recordID := debug.GenerateID()
-				debug.GetInstance().RecordOutgoingRequest(recordID, debugTraceID, "POST", selectedBackend.URL+"/predict", debugHeaders, bodyBytes)
-				body, _ := io.ReadAll(resp.Body)
-				resp.Body = io.NopCloser(bytes.NewReader(body))
-				debug.GetInstance().RecordOutgoingResponse(recordID, resp.StatusCode, resp.Header, body)
-				resp.Body = io.NopCloser(bytes.NewReader(body))
-			}
-
-			body, err := io.ReadAll(resp.Body)
-			if err != nil {
-				resultMutex.Lock()
-				groupErrors[g.Key] = err
-				resultMutex.Unlock()
-				return
-			}
-
-			if resp.StatusCode != http.StatusOK {
-				resultMutex.Lock()
-				groupErrors[g.Key] = fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
-				resultMutex.Unlock()
-				return
-			}
-
-			var result map[string]interface{}
-			if err := json.Unmarshal(body, &result); err != nil {
 				resultMutex.Lock()
 				groupErrors[g.Key] = err
 				resultMutex.Unlock()
@@ -295,21 +242,125 @@ func cloneHeaderWithContentType(src http.Header, contentType string) http.Header
 	return cloned
 }
 
-func selectBackendForDispatchGroup(group proxy.DispatchGroup) (*config.Backend, error) {
+func executeDispatchGroup(r *http.Request, debugTraceID string, group proxy.DispatchGroup, entriesJSON string) (map[string]interface{}, error) {
+	attempts, err := buildDispatchAttempts(group)
+	if err != nil {
+		return nil, err
+	}
+
+	var attemptErrors []string
+	for _, attempt := range attempts {
+		result, err := executeDispatchAttempt(r, debugTraceID, attempt, entriesJSON)
+		if err == nil {
+			return result, nil
+		}
+
+		attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", attempt.backend.Name, err))
+		if !attempt.continueOnFailure {
+			break
+		}
+	}
+
+	if len(attemptErrors) == 0 {
+		return nil, fmt.Errorf("no backend available for task: %s", group.Task)
+	}
+	if len(attemptErrors) == 1 {
+		return nil, fmt.Errorf("%s", attemptErrors[0])
+	}
+
+	return nil, fmt.Errorf("all backends failed for %s: %s", group.Key, strings.Join(attemptErrors, "; "))
+}
+
+func executeDispatchAttempt(r *http.Request, debugTraceID string, attempt dispatchAttempt, entriesJSON string) (map[string]interface{}, error) {
+	resp, bodyBytes, outgoingContentType, err := proxy.ForwardPredictRequestWithType(attempt.backend.URL, r, entriesJSON)
+	debugHeaders := cloneHeaderWithContentType(r.Header, outgoingContentType)
+	if err != nil {
+		if debug.GetInstance().IsEnabled() {
+			recordID := debug.GenerateID()
+			debug.GetInstance().RecordOutgoingRequest(recordID, debugTraceID, http.MethodPost, attempt.backend.URL+"/predict", debugHeaders, bodyBytes)
+			debug.GetInstance().RecordError(recordID, err)
+		}
+
+		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, err.Error())
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	body, readErr := io.ReadAll(resp.Body)
+	if debug.GetInstance().IsEnabled() {
+		recordID := debug.GenerateID()
+		debug.GetInstance().RecordOutgoingRequest(recordID, debugTraceID, http.MethodPost, attempt.backend.URL+"/predict", debugHeaders, bodyBytes)
+		if readErr != nil {
+			debug.GetInstance().RecordError(recordID, readErr)
+		} else {
+			debug.GetInstance().RecordOutgoingResponse(recordID, resp.StatusCode, resp.Header, body)
+		}
+	}
+
+	if readErr != nil {
+		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, readErr.Error())
+		return nil, readErr
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)))
+		return nil, fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+	}
+
+	var result map[string]interface{}
+	if err := json.Unmarshal(body, &result); err != nil {
+		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, err.Error())
+		return nil, err
+	}
+
+	cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusHealthy, "")
+	return result, nil
+}
+
+func buildDispatchAttempts(group proxy.DispatchGroup) ([]dispatchAttempt, error) {
+	var attempts []dispatchAttempt
+	seenBackends := make(map[string]struct{})
+
+	appendAttempt := func(backend *config.Backend, continueOnFailure bool) {
+		if backend == nil {
+			return
+		}
+		if _, exists := seenBackends[backend.Name]; exists {
+			return
+		}
+
+		attempts = append(attempts, dispatchAttempt{
+			backend:           *backend,
+			continueOnFailure: continueOnFailure,
+		})
+		seenBackends[backend.Name] = struct{}{}
+	}
+
 	if group.Split {
 		if backend := cfg.GetBackendByModelType(group.Type); backend != nil {
-			if cfg.GetModelTypeRoutingPolicy(group.Type) == config.RoutingPolicyFallback {
-				backendHealth := cfg.GetHealthStatus(backend.Name)
-				// Unknown is treated as potentially available; only explicit unhealthy falls back.
-				if backendHealth.Status != config.HealthStatusUnhealthy {
-					return backend, nil
-				}
-			} else {
-				return backend, nil
+			policy := cfg.GetModelTypeRoutingPolicy(group.Type)
+			if policy == config.RoutingPolicyStrict || cfg.GetHealthStatus(backend.Name).Status != config.HealthStatusUnhealthy {
+				appendAttempt(backend, policy == config.RoutingPolicyFallback)
 			}
 		}
 	}
 
+	if backend := selectTaskBackendForDispatchGroup(group); backend != nil {
+		appendAttempt(backend, cfg.GetTaskRoutingPolicy(group.Task) == config.RoutingPolicyFallback)
+	}
+
+	if backend := cfg.GetDefaultBackend(); backend != nil {
+		appendAttempt(backend, false)
+	}
+
+	if len(attempts) == 0 {
+		return nil, fmt.Errorf("no backend available for task: %s", group.Task)
+	}
+
+	return attempts, nil
+}
+
+func selectTaskBackendForDispatchGroup(group proxy.DispatchGroup) *config.Backend {
 	healthyBackends := cfg.GetHealthyBackendsByTask(group.Task)
 	allBackends := cfg.GetBackendsByTask(group.Task)
 	taskPolicy := cfg.GetTaskRoutingPolicy(group.Task)
@@ -341,17 +392,22 @@ func selectBackendForDispatchGroup(group proxy.DispatchGroup) (*config.Backend, 
 		if selectedURL != "" {
 			for _, backend := range candidates {
 				if backend.URL == selectedURL {
-					return &backend, nil
+					return &backend
 				}
 			}
 		}
 	}
 
-	if backend := cfg.GetDefaultBackend(); backend != nil {
-		return backend, nil
+	return nil
+}
+
+func selectBackendForDispatchGroup(group proxy.DispatchGroup) (*config.Backend, error) {
+	attempts, err := buildDispatchAttempts(group)
+	if err != nil {
+		return nil, err
 	}
 
-	return nil, fmt.Errorf("no backend available for task: %s", group.Task)
+	return &attempts[0].backend, nil
 }
 
 func mergePredictResult(dst map[string]interface{}, src map[string]interface{}) error {
