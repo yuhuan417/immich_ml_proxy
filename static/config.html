@@ -773,10 +773,16 @@
 
         function createRoutingPolicySelect(selectedPolicy) {
             const select = document.createElement('select');
+            select.title = 'strict: always route to this backend, abort if unhealthy. fallback: route when healthy, skip to the next level otherwise.';
             for (const policy of ROUTING_POLICIES) {
                 const option = document.createElement('option');
                 option.value = policy;
                 option.textContent = policy;
+                if (policy === 'strict') {
+                    option.title = 'Always use this backend. Abort if unhealthy.';
+                } else {
+                    option.title = 'Use when healthy. If unhealthy, skip to next level: modelType → task → default, or task → default.';
+                }
                 select.appendChild(option);
             }
             select.value = normalizeRoutingPolicyValue(selectedPolicy);
