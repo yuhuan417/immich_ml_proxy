@@ -2,6 +2,7 @@ package main
 
 import (
 	"flag"
+	"fmt"
 	"immich_ml_proxy/config"
 	"immich_ml_proxy/handlers"
 	"log"
@@ -12,6 +13,7 @@ import (
 func main() {
 	// Parse command line flags
 	debugMode := flag.Bool("debug", false, "Enable debug mode")
+	port := flag.Int("port", 3004, "Listen port")
 	flag.Parse()
 
 	// Set Gin mode: Release by default, Debug only if --debug flag is provided
@@ -42,6 +44,10 @@ func main() {
 	r.POST("/api/config", handlers.ConfigPostHandler)
 	r.GET("/api/health", handlers.HealthAPIGetHandler)
 
+	// Static assets
+	r.GET("/shared.css", func(c *gin.Context) { c.File("static/shared.css") })
+	r.GET("/shared.js", func(c *gin.Context) { c.File("static/shared.js") })
+
 	// Debug routes
 	r.GET("/debug", handlers.DebugPageHandler)
 	r.GET("/api/debug/status", handlers.DebugStatusHandler)
@@ -51,8 +57,9 @@ func main() {
 	r.DELETE("/api/debug/records", handlers.DebugClearRecordsHandler)
 
 	// Start server
-	log.Println("Starting Immich ML Proxy on :3004")
-	if err := r.Run(":3004"); err != nil {
+	listenAddr := fmt.Sprintf("0.0.0.0:%d", *port)
+	log.Println("Starting Immich ML Proxy on", listenAddr)
+	if err := r.Run(listenAddr); err != nil {
 		log.Fatal("Failed to start server:", err)
 	}
 }
