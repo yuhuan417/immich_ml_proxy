@@ -78,7 +78,11 @@ func ForwardRequest(backendURL string, method string, path string, header http.H
 	// Read body for debug recording
 	var bodyBytes []byte
 	if body != nil {
-		bodyBytes, _ = io.ReadAll(body)
+		var err error
+		bodyBytes, err = io.ReadAll(body)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read request body: %w", err)
+		}
 		body = io.NopCloser(bytes.NewReader(bodyBytes))
 	}
 

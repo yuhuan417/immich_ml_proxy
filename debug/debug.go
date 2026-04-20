@@ -1,6 +1,7 @@
 package debug
 
 import (
+	"crypto/rand"
 	"net/http"
 	"sort"
 	"strings"
@@ -298,12 +299,13 @@ func GenerateID() string {
 	return time.Now().Format("20060102-150405.000") + "-" + randomString(6)
 }
 
-// randomString generates a random string of given length
+// randomString generates a cryptographically random string of given length
 func randomString(length int) string {
 	const charset = "abcdefghijklmnopqrstuvwxyz0123456789"
 	b := make([]byte, length)
+	rand.Read(b)
 	for i := range b {
-		b[i] = charset[time.Now().UnixNano()%int64(len(charset))]
+		b[i] = charset[b[i]%byte(len(charset))]
 	}
 	return string(b)
 }

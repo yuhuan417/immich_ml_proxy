@@ -90,7 +90,12 @@ func DebugMiddleware() gin.HandlerFunc {
 		// Read request body
 		var body []byte
 		if c.Request.Body != nil {
-			body, _ = io.ReadAll(c.Request.Body)
+			var err error
+			body, err = io.ReadAll(c.Request.Body)
+			if err != nil {
+				c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"error": "failed to read request body"})
+				return
+			}
 			c.Request.Body = io.NopCloser(bytes.NewReader(body))
 		}
 
