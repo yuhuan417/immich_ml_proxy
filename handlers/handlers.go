@@ -6,7 +6,6 @@ import (
 	"immich_ml_proxy/config"
 	"immich_ml_proxy/debug"
 	"immich_ml_proxy/proxy"
-	"immich_ml_proxy/tasks"
 	"io"
 	"net/http"
 	"strings"
@@ -443,22 +442,6 @@ func mergePredictResult(dst map[string]interface{}, src map[string]interface{}) 
 	return nil
 }
 
-func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
-	normalized := make(map[string]string)
-	for taskName, backendName := range taskRouting {
-		normalized[tasks.NormalizeTaskName(taskName)] = backendName
-	}
-	return normalized
-}
-
-func normalizeTaskRoutingPolicy(taskRoutingPolicy map[string]config.RoutingPolicy) map[string]config.RoutingPolicy {
-	normalized := make(map[string]config.RoutingPolicy)
-	for taskName, policy := range taskRoutingPolicy {
-		normalized[tasks.NormalizeTaskName(taskName)] = policy
-	}
-	return normalized
-}
-
 func validateRoutingBackends(backends []config.Backend, taskRouting map[string]string, modelTypeRouting map[string]string) error {
 	backendNames := make(map[string]struct{}, len(backends))
 	for _, backend := range backends {
@@ -587,12 +570,12 @@ func ConfigPostHandler(c *gin.Context) {
 		return
 	}
 
-	normalizedTaskRouting := normalizeTaskRouting(req.TaskRouting)
+	normalizedTaskRouting := config.NormalizeTaskRouting(req.TaskRouting)
 	modelTypeRouting := req.ModelTypeRouting
 	if modelTypeRouting == nil {
 		modelTypeRouting = make(map[string]string)
 	}
-	taskRoutingPolicy := normalizeTaskRoutingPolicy(req.TaskRoutingPolicy)
+	taskRoutingPolicy := config.NormalizeTaskRoutingPolicy(req.TaskRoutingPolicy)
 	modelTypeRoutingPolicy := req.ModelTypeRoutingPolicy
 	if modelTypeRoutingPolicy == nil {
 		modelTypeRoutingPolicy = make(map[string]config.RoutingPolicy)

@@ -84,10 +84,10 @@ func (c *Config) loadFromFile() {
 
 	c.DefaultBackend = cfg.DefaultBackend
 	c.Backends = cfg.Backends
-	c.TaskRouting = normalizeTaskRouting(cfg.TaskRouting)
+	c.TaskRouting = NormalizeTaskRouting(cfg.TaskRouting)
 	c.ModelTypeRouting = cfg.ModelTypeRouting
-	c.TaskRoutingPolicy = normalizeTaskRoutingPolicy(cfg.TaskRoutingPolicy)
-	c.ModelTypeRoutingPolicy = normalizeModelTypeRoutingPolicy(cfg.ModelTypeRoutingPolicy)
+	c.TaskRoutingPolicy = NormalizeTaskRoutingPolicy(cfg.TaskRoutingPolicy)
+	c.ModelTypeRoutingPolicy = NormalizeModelTypeRoutingPolicy(cfg.ModelTypeRoutingPolicy)
 
 	if c.TaskRouting == nil {
 		c.TaskRouting = make(map[string]string)
@@ -222,13 +222,13 @@ func (c *Config) Replace(defaultBackend string, backends []Backend, taskRouting 
 	backendsCopy := make([]Backend, len(backends))
 	copy(backendsCopy, backends)
 
-	taskRoutingCopy := normalizeTaskRouting(taskRouting)
+	taskRoutingCopy := NormalizeTaskRouting(taskRouting)
 	modelTypeRoutingCopy := make(map[string]string, len(modelTypeRouting))
 	for modelType, backendName := range modelTypeRouting {
 		modelTypeRoutingCopy[modelType] = backendName
 	}
-	taskRoutingPolicyCopy := normalizeTaskRoutingPolicy(taskRoutingPolicy)
-	modelTypeRoutingPolicyCopy := normalizeModelTypeRoutingPolicy(modelTypeRoutingPolicy)
+	taskRoutingPolicyCopy := NormalizeTaskRoutingPolicy(taskRoutingPolicy)
+	modelTypeRoutingPolicyCopy := NormalizeModelTypeRoutingPolicy(modelTypeRoutingPolicy)
 
 	c.DefaultBackend = defaultBackend
 	c.Backends = backendsCopy
@@ -253,10 +253,10 @@ func (c *Config) ToJSON() ([]byte, error) {
 	}{
 		DefaultBackend:         c.DefaultBackend,
 		Backends:               c.Backends,
-		TaskRouting:            normalizeTaskRouting(c.TaskRouting),
+		TaskRouting:            NormalizeTaskRouting(c.TaskRouting),
 		ModelTypeRouting:       c.ModelTypeRouting,
-		TaskRoutingPolicy:      normalizeTaskRoutingPolicy(c.TaskRoutingPolicy),
-		ModelTypeRoutingPolicy: normalizeModelTypeRoutingPolicy(c.ModelTypeRoutingPolicy),
+		TaskRoutingPolicy:      NormalizeTaskRoutingPolicy(c.TaskRoutingPolicy),
+		ModelTypeRoutingPolicy: NormalizeModelTypeRoutingPolicy(c.ModelTypeRoutingPolicy),
 	}
 
 	// Ensure maps are not nil
@@ -439,7 +439,7 @@ func (c *Config) GetTaskRoutingPolicy(task string) RoutingPolicy {
 
 	task = tasks.NormalizeTaskName(task)
 	if policy, ok := c.TaskRoutingPolicy[task]; ok {
-		return normalizeRoutingPolicy(policy)
+		return NormalizeRoutingPolicy(policy)
 	}
 	return RoutingPolicyStrict
 }
@@ -451,7 +451,7 @@ func (c *Config) GetModelTypeRoutingPolicy(modelType string) RoutingPolicy {
 	defer c.mu.RUnlock()
 
 	if policy, ok := c.ModelTypeRoutingPolicy[modelType]; ok {
-		return normalizeRoutingPolicy(policy)
+		return NormalizeRoutingPolicy(policy)
 	}
 	return RoutingPolicyStrict
 }
@@ -468,7 +468,7 @@ func (c *Config) GetAllModelTypes() []string {
 	return result
 }
 
-func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
+func NormalizeTaskRouting(taskRouting map[string]string) map[string]string {
 	if taskRouting == nil {
 		return make(map[string]string)
 	}
@@ -480,31 +480,31 @@ func normalizeTaskRouting(taskRouting map[string]string) map[string]string {
 	return normalized
 }
 
-func normalizeTaskRoutingPolicy(taskRoutingPolicy map[string]RoutingPolicy) map[string]RoutingPolicy {
+func NormalizeTaskRoutingPolicy(taskRoutingPolicy map[string]RoutingPolicy) map[string]RoutingPolicy {
 	if taskRoutingPolicy == nil {
 		return make(map[string]RoutingPolicy)
 	}
 
 	normalized := make(map[string]RoutingPolicy, len(taskRoutingPolicy))
 	for task, policy := range taskRoutingPolicy {
-		normalized[tasks.NormalizeTaskName(task)] = normalizeRoutingPolicy(policy)
+		normalized[tasks.NormalizeTaskName(task)] = NormalizeRoutingPolicy(policy)
 	}
 	return normalized
 }
 
-func normalizeModelTypeRoutingPolicy(modelTypeRoutingPolicy map[string]RoutingPolicy) map[string]RoutingPolicy {
+func NormalizeModelTypeRoutingPolicy(modelTypeRoutingPolicy map[string]RoutingPolicy) map[string]RoutingPolicy {
 	if modelTypeRoutingPolicy == nil {
 		return make(map[string]RoutingPolicy)
 	}
 
 	normalized := make(map[string]RoutingPolicy, len(modelTypeRoutingPolicy))
 	for modelType, policy := range modelTypeRoutingPolicy {
-		normalized[modelType] = normalizeRoutingPolicy(policy)
+		normalized[modelType] = NormalizeRoutingPolicy(policy)
 	}
 	return normalized
 }
 
-func normalizeRoutingPolicy(policy RoutingPolicy) RoutingPolicy {
+func NormalizeRoutingPolicy(policy RoutingPolicy) RoutingPolicy {
 	switch policy {
 	case RoutingPolicyFallback:
 		return RoutingPolicyFallback

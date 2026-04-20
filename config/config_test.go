@@ -205,7 +205,7 @@ func TestConfigReplaceAndToJSON(t *testing.T) {
 		t.Fatalf("expected modelType policy in json, got %#v", decoded.ModelTypeRoutingPolicy)
 	}
 
-	if got := normalizeTaskRouting(nil); len(got) != 0 {
+	if got := NormalizeTaskRouting(nil); len(got) != 0 {
 		t.Fatalf("expected nil routing to normalize to empty map, got %#v", got)
 	}
 }

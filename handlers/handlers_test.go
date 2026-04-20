@@ -116,7 +116,7 @@ func TestMergePredictResult(t *testing.T) {
 }
 
 func TestNormalizeTaskRoutingAndValidateRoutingBackends(t *testing.T) {
-	routing := normalizeTaskRouting(map[string]string{
+	routing := config.NormalizeTaskRouting(map[string]string{
 		tasks.LegacyFacialRecognitionTask: "face-backend",
 	})
 	if got := routing[tasks.FacialRecognitionTask]; got != "face-backend" {
