@@ -538,6 +538,16 @@
                             Capture inbound requests and downstream calls.
                         </div>
                     </div>
+                    <div class="switch-row" style="margin-top: 10px;">
+                        <label class="switch" for="filterPingToggle">
+                            <input type="checkbox" id="filterPingToggle" role="switch" aria-label="Toggle /ping filtering" checked>
+                            <span class="slider" aria-hidden="true"></span>
+                        </label>
+                        <div class="control-meta">
+                            <strong id="filterPingLabel">Filter /ping</strong><br>
+                            Hide health check requests from the trace list.
+                        </div>
+                    </div>
                 </div>
 
                 <div class="panel">
@@ -682,6 +692,7 @@
             refs.debugToggle = document.getElementById('debugToggle');
             refs.debugModePill = document.getElementById('debugModePill');
             refs.debugStatusLabel = document.getElementById('debugStatusLabel');
+            refs.filterPingToggle = document.getElementById('filterPingToggle');
             refs.refreshSummary = document.getElementById('refreshSummary');
             refs.maxRecords = document.getElementById('maxRecords');
             refs.refreshButton = document.getElementById('refreshButton');
@@ -706,6 +717,7 @@
 
         function bindEvents() {
             refs.debugToggle.addEventListener('change', toggleDebug);
+            refs.filterPingToggle.addEventListener('change', toggleFilterPing);
             refs.maxRecords.addEventListener('change', updateMaxRecords);
             refs.refreshButton.addEventListener('click', () => refreshDashboard({ showLoading: true, preserveNotice: true }));
             refs.pauseButton.addEventListener('click', togglePause);
@@ -786,6 +798,7 @@
 
         function syncStatusControls() {
             refs.debugToggle.checked = Boolean(latestStatus.enabled);
+            refs.filterPingToggle.checked = latestStatus.filterPing !== false;
             refs.maxRecords.value = String(latestStatus.maxRecords || 100);
 
             if (latestStatus.enabled) {
@@ -859,6 +872,28 @@
             } catch (error) {
                 refs.debugToggle.checked = !enabled;
                 syncStatusControls();
+                showNotice(error.message, 'error', { persist: true });
+            }
+        }
+
+        async function toggleFilterPing() {
+            const filterPing = refs.filterPingToggle.checked;
+
+            try {
+                const response = await fetch('/api/debug/filter-ping', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ filterPing })
+                });
+
+                if (!response.ok) {
+                    throw new Error('Failed to update /ping filter');
+                }
+
+                latestStatus.filterPing = filterPing;
+                showNotice(`/ping filtering ${filterPing ? 'enabled' : 'disabled'}.`, 'success');
+            } catch (error) {
+                refs.filterPingToggle.checked = !filterPing;
                 showNotice(error.message, 'error', { persist: true });
             }
         }

@@ -37,10 +37,11 @@ type ResponseInfo struct {
 
 // DebugManager manages debug records and settings
 type DebugManager struct {
-	enabled    bool
-	maxRecords int
-	records    map[string]HTTPRecord // id -> record
-	mu         sync.RWMutex
+	enabled     bool
+	maxRecords  int
+	filterPing  bool
+	records     map[string]HTTPRecord // id -> record
+	mu          sync.RWMutex
 }
 
 var (
@@ -54,6 +55,7 @@ func GetInstance() *DebugManager {
 		instance = &DebugManager{
 			enabled:    false,
 			maxRecords: 100,
+			filterPing: true,
 			records:    make(map[string]HTTPRecord),
 		}
 	})
@@ -72,6 +74,20 @@ func (dm *DebugManager) SetEnabled(enabled bool) {
 	dm.mu.Lock()
 	defer dm.mu.Unlock()
 	dm.enabled = enabled
+}
+
+// IsFilterPingEnabled returns whether /ping requests are filtered out
+func (dm *DebugManager) IsFilterPingEnabled() bool {
+	dm.mu.RLock()
+	defer dm.mu.RUnlock()
+	return dm.filterPing
+}
+
+// SetFilterPing enables or disables /ping filtering
+func (dm *DebugManager) SetFilterPing(enabled bool) {
+	dm.mu.Lock()
+	defer dm.mu.Unlock()
+	dm.filterPing = enabled
 }
 
 // GetMaxRecords returns the maximum number of records to keep
@@ -258,6 +274,7 @@ func (dm *DebugManager) GetStatus() map[string]interface{} {
 	return map[string]interface{}{
 		"enabled":     dm.enabled,
 		"maxRecords":  dm.maxRecords,
+		"filterPing":  dm.filterPing,
 		"recordCount": len(dm.records),
 	}
 }

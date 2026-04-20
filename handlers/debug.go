@@ -55,6 +55,21 @@ func DebugMaxRecordsHandler(c *gin.Context) {
 	c.JSON(http.StatusOK, gin.H{"maxRecords": req.MaxRecords})
 }
 
+// DebugFilterPingHandler handles POST /api/debug/filter-ping - toggles /ping filtering
+func DebugFilterPingHandler(c *gin.Context) {
+	var req struct {
+		FilterPing bool `json:"filterPing"`
+	}
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	dm := debug.GetInstance()
+	dm.SetFilterPing(req.FilterPing)
+	c.JSON(http.StatusOK, gin.H{"filterPing": req.FilterPing})
+}
+
 // DebugRecordsHandler handles GET /api/debug/records - returns all debug records
 func DebugRecordsHandler(c *gin.Context) {
 	dm := debug.GetInstance()
@@ -82,7 +97,14 @@ func DebugMiddleware() gin.HandlerFunc {
 		// Skip debug endpoints to avoid infinite loops
 		if c.Request.URL.Path == "/debug" || c.Request.URL.Path == "/api/debug/status" ||
 			c.Request.URL.Path == "/api/debug/toggle" || c.Request.URL.Path == "/api/debug/max-records" ||
+			c.Request.URL.Path == "/api/debug/filter-ping" ||
 			c.Request.URL.Path == "/api/debug/records" || c.Request.URL.Path == "/api/config" {
+			c.Next()
+			return
+		}
+
+		// Skip /ping when filterPing is enabled
+		if c.Request.URL.Path == "/ping" && dm.IsFilterPingEnabled() {
 			c.Next()
 			return
 		}

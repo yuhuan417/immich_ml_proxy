@@ -53,6 +53,7 @@ func main() {
 	r.GET("/api/debug/status", handlers.DebugStatusHandler)
 	r.POST("/api/debug/toggle", handlers.DebugToggleHandler)
 	r.POST("/api/debug/max-records", handlers.DebugMaxRecordsHandler)
+	r.POST("/api/debug/filter-ping", handlers.DebugFilterPingHandler)
 	r.GET("/api/debug/records", handlers.DebugRecordsHandler)
 	r.DELETE("/api/debug/records", handlers.DebugClearRecordsHandler)
 
