@@ -395,6 +395,7 @@
 
             refs.backendList.addEventListener('click', handleBackendListClick);
             refs.backendList.addEventListener('change', handleBackendListChange);
+            refs.backendList.addEventListener('blur', handleBackendInputBlur, true);
 
             refs.routingList.addEventListener('click', handleRoutingListClick);
             refs.routingList.addEventListener('change', handleRoutingListChange);
@@ -843,6 +844,24 @@
         }
 
         function handleBackendListChange(event) {
+            const target = event.target;
+            const index = Number(target.dataset.index);
+
+            // Only handle non-text-input changes (e.g. selects) here.
+            // Text inputs use blur via handleBackendInputBlur.
+            if (target.tagName === 'INPUT') {
+                return;
+            }
+
+            if (target.dataset.action === 'backend-name') {
+                renameBackend(index, target.value);
+            }
+            if (target.dataset.action === 'backend-url') {
+                updateBackendURL(index, target.value);
+            }
+        }
+
+        function handleBackendInputBlur(event) {
             const target = event.target;
             const index = Number(target.dataset.index);
 
