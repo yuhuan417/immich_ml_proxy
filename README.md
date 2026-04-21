@@ -28,19 +28,20 @@ Checks the health status of all configured backends and verifies that each route
 - Updates health status for each backend based on response
 - Verifies that the default backend is healthy (handles all non-routed types)
 - Verifies strict task routes in `taskRouting` have a healthy backend
-- Verifies strict CLIP `modelTypeRouting` targets are healthy
-- Allows fallback routes to degrade to `defaultBackend` when their routed backend is unhealthy
+- Verifies strict `modelTypeRouting` targets are healthy
+- Allows fallback routes to skip to `defaultBackend` when their routed backend is unhealthy
 
 **Response**:
 - Returns `"pong"` with HTTP 200 if:
   - Default backend is healthy
-- Every strict task route in `taskRouting` has at least one healthy backend
-- Every strict CLIP `modelTypeRouting` target is healthy
+  - Every strict task route in `taskRouting` has at least one healthy backend
+  - Every strict `modelTypeRouting` target is healthy
 - Returns HTTP 503 (Service Unavailable) if:
   - No backends are configured
+  - Default backend is not set or not found in the backends list
   - Default backend is unhealthy
-- Any strict task route in `taskRouting` lacks healthy backends
-- Any strict CLIP `modelTypeRouting` target is unhealthy
+  - Any strict task route in `taskRouting` lacks healthy backends
+  - Any strict `modelTypeRouting` target is unhealthy
 
 ### POST /predict
 Routes inference requests to appropriate backends based on task semantics. Dependent tasks stay grouped, while CLIP can be split by model type and merged back into one response.
@@ -61,8 +62,8 @@ Routes inference requests to appropriate backends based on task semantics. Depen
   - Falls back to task routing from `taskRouting`
   - Falls back again to `defaultBackend` if no task-specific route exists
   - Applies per-route policy:
-    - `strict`: keep routed backend even when unhealthy or when the request fails
-    - `fallback`: if routed backend is unhealthy or the request fails, degrade to the next fallback level within the same request
+    - `strict`: use routed backend even if unhealthy; request fails if the backend is down
+    - `fallback`: use routed backend when healthy; if unhealthy or the request fails, skip to the next fallback level within the same request
   - Updates backend health status based on response (200 = healthy, other = unhealthy)
 - Processes dispatch groups concurrently and merges split CLIP responses back into one JSON response
 
@@ -86,8 +87,7 @@ Returns health status of all backends in real-time.
 {
   "backend1": {
     "status": "healthy",
-    "lastCheck": 1735278000,
-    "error": ""
+    "lastCheck": 1735278000
   },
   "backend2": {
     "status": "unhealthy",
@@ -152,6 +152,7 @@ Returns current debug status.
 {
   "enabled": true,
   "maxRecords": 100,
+  "filterPing": true,
   "recordCount": 42
 }
 ```
@@ -173,6 +174,16 @@ Sets the maximum number of debug records to keep (1-10000).
 ```json
 {
   "maxRecords": 500
+}
+```
+
+### POST /api/debug/filter-ping
+Toggles whether `/ping` health check requests are excluded from debug records.
+
+**Request Body**:
+```json
+{
+  "filterPing": true
 }
 ```
 
@@ -233,10 +244,10 @@ Configuration is saved in `config.json`:
 **Dispatch Rules**:
 - `facial-recognition` and `ocr` stay grouped and are routed using `taskRouting`
 - `clip` can arrive with `textual`, `visual`, or both, and each present model type is routed independently via `modelTypeRouting`, with fallback to `taskRouting["clip"]` and then `defaultBackend`
-- `strict` route policy keeps routed backend even if unhealthy or the request fails
-- `fallback` route policy degrades to the next fallback level when routed backend is unhealthy or the request fails
+- `strict` route policy uses the routed backend even if unhealthy; request fails if the backend is down
+- `fallback` route policy uses the routed backend when healthy; if unhealthy or the request fails, skips to the next fallback level
 - All other tasks are routed to the `defaultBackend`
-- Health checks verify the default backend, routed tasks, and configured CLIP model-type routes
+- Health checks verify the default backend, routed tasks, and configured modelType routes
 
 ## Running
 
@@ -249,9 +260,12 @@ go run main.go
 
 # Run the service with debug mode enabled
 go run main.go --debug
+
+# Run on a custom port
+go run main.go --port 8080
 ```
 
-The service listens on port `:3004` by default.
+The service listens on port `:3004` by default. Use `--port` to change it.
 
 ## Usage Example
 
@@ -341,7 +355,9 @@ immich_ml_proxy/
 │   └── debug.go         # Debug manager for request/response recording
 └── static/
     ├── config.html      # Web configuration interface
-    └── debug.html       # Debug monitoring interface
+    ├── debug.html       # Debug monitoring interface
+    ├── shared.css       # Shared styles
+    └── shared.js        # Shared header and notice manager
 ```
 
 ## Architecture
@@ -366,5 +382,5 @@ immich_ml_proxy/
 1. Check all backends in parallel via `/ping` endpoint
 2. Verify `defaultBackend` is healthy (required for non-routed types)
 3. Verify each strict task route in `taskRouting` has at least one healthy backend
-4. Verify each strict CLIP `modelTypeRouting` backend is healthy
+4. Verify each strict `modelTypeRouting` backend is healthy
 5. Return healthy only if all conditions are met
