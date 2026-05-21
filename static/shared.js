@@ -9,17 +9,18 @@ function renderShellHeader(activePage, heroConfig) {
     header.innerHTML = `
         <div class="topbar">
             <div class="brand-block">
-                <span class="brand-kicker">Immich ML Proxy</span>
-                <span class="brand-title">${heroConfig.brandTitle || 'Operations Console'}</span>
+                <span class="brand-kicker">Operations Console</span>
+                <span class="brand-title">${heroConfig.brandTitle || 'Immich ML Proxy'}</span>
             </div>
             <nav class="nav-tabs" aria-label="Primary">
-                <a class="nav-link${activePage === 'config' ? ' active' : ''}" href="/config"${activePage === 'config' ? ' aria-current="page"' : ''}>Configuration</a>
-                <a class="nav-link${activePage === 'debug' ? ' active' : ''}" href="/debug"${activePage === 'debug' ? ' aria-current="page"' : ''}>Debug Console</a>
+                <a class="nav-link${activePage === 'config' ? ' active' : ''}" href="/config"${activePage === 'config' ? ' aria-current="page"' : ''}>Config</a>
+                <a class="nav-link${activePage === 'debug' ? ' active' : ''}" href="/debug"${activePage === 'debug' ? ' aria-current="page"' : ''}>Debug</a>
             </nav>
         </div>
         <div class="hero">
             <div class="hero-copy">
                 <h1>${heroConfig.title}</h1>
+                ${heroConfig.subtitle ? `<p>${heroConfig.subtitle}</p>` : ''}
             </div>
             <div class="hero-status" id="heroStatus">
                 ${heroConfig.statusHTML || ''}

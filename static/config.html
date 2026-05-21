@@ -27,6 +27,16 @@
             letter-spacing: 0.02em;
         }
 
+        .header-actions {
+            justify-content: flex-end;
+            margin-top: 6px;
+        }
+
+        .default-backend-control {
+            max-width: 520px;
+            margin-top: 12px;
+        }
+
         .field-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
@@ -189,28 +199,14 @@
             <section class="panel">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Persistence</div>
-                        <p class="panel-subtitle">Save when the draft differs from the server config. Reload discards local edits.</p>
-                    </div>
-                    <div id="busyIndicator" class="busy-indicator" aria-live="polite"></div>
-                </div>
-                <div class="btn-row">
-                    <button id="saveButton" class="btn btn-primary" type="button" disabled>Save Configuration</button>
-                    <button id="reloadButton" class="btn btn-secondary" type="button">Reload From Server</button>
-                </div>
-            </section>
-
-            <section class="panel">
-                <div class="panel-header">
-                    <div>
                         <div class="panel-title">Default Backend</div>
-                        <p class="panel-subtitle">Fallback for requests without an explicit task or modelType route.</p>
+                        <p class="panel-subtitle">Fallback destination for requests that do not match a task or modelType route.</p>
                     </div>
                 </div>
-                <div class="field">
-                    <label for="defaultBackend">Select Default Backend</label>
+                <div class="field default-backend-control">
+                    <label for="defaultBackend">Backend</label>
                     <select id="defaultBackend"></select>
-                    <p class="field-hint">If the current default is removed, the first remaining backend is promoted automatically.</p>
+                    <p class="field-hint">If you remove the current default backend, the first remaining backend is promoted automatically.</p>
                 </div>
             </section>
 
@@ -334,7 +330,8 @@
         function init() {
             renderShellHeader('config', {
                 title: 'Configuration',
-                statusHTML: '<span id="dirtyIndicator" class="status-pill success">Saved</span><p id="saveSummary" class="hero-meta">Server and browser state are in sync.</p>'
+                subtitle: 'Backends, routing rules, fallback policy, and health status in one compact view.',
+                statusHTML: '<span id="dirtyIndicator" class="status-pill success">Saved</span><p id="saveSummary" class="hero-meta">Server and browser state are in sync.</p><div class="btn-row header-actions"><button id="saveButton" class="btn btn-primary" type="button" disabled>Save</button><button id="reloadButton" class="btn btn-secondary" type="button">Reload</button></div><div id="busyIndicator" class="busy-indicator" aria-live="polite"></div>'
             });
 
             refs.notice = document.getElementById('notice');
