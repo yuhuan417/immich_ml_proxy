@@ -396,8 +396,10 @@ func TestPredictHandlerModelTypeFailureFallsBackToTaskRoute(t *testing.T) {
 	if got := defaultCalls.Load(); got != 0 {
 		t.Fatalf("did not expect default backend to be used, got %d calls", got)
 	}
-	if got := cfg.GetHealthStatus("gpu").Status; got != config.HealthStatusUnhealthy {
-		t.Fatalf("expected gpu backend to be marked unhealthy, got %q", got)
+	// The 502 is one unreachable observation, which is below the demotion
+	// threshold, so the backend keeps its verdict for now.
+	if got := cfg.GetHealthStatus("gpu"); got.Status != config.HealthStatusUnknown || got.Failures != 1 {
+		t.Fatalf("expected one gateway failure to stay below the threshold, got %+v", got)
 	}
 	if got := cfg.GetHealthStatus("clip-task").Status; got != config.HealthStatusHealthy {
 		t.Fatalf("expected task backend to be marked healthy, got %q", got)
@@ -471,8 +473,10 @@ func TestPredictHandlerTaskFailureFallsBackToDefault(t *testing.T) {
 	if got := defaultCalls.Load(); got != 1 {
 		t.Fatalf("expected default backend to be tried once, got %d", got)
 	}
-	if got := cfg.GetHealthStatus("ocr").Status; got != config.HealthStatusUnhealthy {
-		t.Fatalf("expected task backend to be marked unhealthy, got %q", got)
+	// The 503 is one unreachable observation, which is below the demotion
+	// threshold, so the backend keeps its verdict for now.
+	if got := cfg.GetHealthStatus("ocr"); got.Status != config.HealthStatusUnknown || got.Failures != 1 {
+		t.Fatalf("expected one gateway failure to stay below the threshold, got %+v", got)
 	}
 	if got := cfg.GetHealthStatus("default").Status; got != config.HealthStatusHealthy {
 		t.Fatalf("expected default backend to be marked healthy, got %q", got)
@@ -826,5 +830,312 @@ func TestDebugMiddlewareAndResponseWriter(t *testing.T) {
 	}
 	if writer.body.String() != "text" {
 		t.Fatalf("expected write string buffer to capture content, got %q", writer.body.String())
+	}
+}
+
+// runPredict drives one /predict through the handler with the given entries.
+func runPredict(t *testing.T, entriesJSON string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	recorder := httptest.NewRecorder()
+	context, _ := gin.CreateTestContext(recorder)
+	context.Request = buildPredictRequest(t, entriesJSON)
+	PredictHandler(context)
+	return recorder
+}
+
+// TestPredictHandlerHTTPFailureDoesNotDemoteBackend is the regression guard for
+// the routing bug: a backend that answers with an error status is still up, so
+// client-caused failures must never move it out of the way of its routes.
+func TestPredictHandlerHTTPFailureDoesNotDemoteBackend(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	for _, status := range []int{http.StatusBadRequest, http.StatusUnprocessableEntity, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			var taskCalls atomic.Int32
+			taskServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				taskCalls.Add(1)
+				http.Error(w, "no thanks", status)
+			}))
+			defer taskServer.Close()
+
+			setTestConfig(t, &config.Config{
+				DefaultBackend: "default",
+				Backends: []config.Backend{
+					{Name: "default", URL: taskServer.URL},
+					{Name: "ocr", URL: taskServer.URL},
+				},
+				TaskRouting: map[string]string{tasks.OCRTask: "ocr"},
+				TaskRoutingPolicy: map[string]config.RoutingPolicy{
+					tasks.OCRTask: config.RoutingPolicyFallback,
+				},
+				Health: make(map[string]config.BackendHealth),
+			})
+
+			// Far more failures than the demotion threshold.
+			for i := 0; i < config.UnreachableThreshold+3; i++ {
+				runPredict(t, `{"ocr":{"text":"scan-me"}}`)
+			}
+
+			// Answering at all proves reachability, whatever the status says.
+			if got := cfg.GetHealthStatus("ocr"); got.Status != config.HealthStatusHealthy || got.Failures != 0 {
+				t.Fatalf("status %d is the backend talking, it must count as reachable (got %+v)", status, got)
+			}
+		})
+	}
+}
+
+// TestPredictHandlerGatewayFailuresEventuallyDemoteBackend covers the other half:
+// an endpoint that reports it cannot serve does get moved aside, but only after
+// enough consecutive observations.
+func TestPredictHandlerGatewayFailuresEventuallyDemoteBackend(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var taskCalls atomic.Int32
+	taskServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		taskCalls.Add(1)
+		http.Error(w, "restarting", http.StatusServiceUnavailable)
+	}))
+	defer taskServer.Close()
+
+	var defaultCalls atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalls.Add(1)
+		_, _ = io.WriteString(w, `{"ocr":{"text":"default-result"}}`)
+	}))
+	defer defaultServer.Close()
+
+	setTestConfig(t, &config.Config{
+		DefaultBackend: "default",
+		Backends: []config.Backend{
+			{Name: "default", URL: defaultServer.URL},
+			{Name: "ocr", URL: taskServer.URL},
+		},
+		TaskRouting: map[string]string{tasks.OCRTask: "ocr"},
+		TaskRoutingPolicy: map[string]config.RoutingPolicy{
+			tasks.OCRTask: config.RoutingPolicyFallback,
+		},
+		Health: make(map[string]config.BackendHealth),
+	})
+
+	// Below the threshold the routed backend is still tried on every request,
+	// with the default backend catching each one.
+	belowThreshold := config.UnreachableThreshold - 1
+	for i := 0; i < belowThreshold; i++ {
+		if recorder := runPredict(t, `{"ocr":{"text":"scan-me"}}`); recorder.Code != http.StatusOK {
+			t.Fatalf("request %d: expected the default backend to serve, got %d", i, recorder.Code)
+		}
+	}
+
+	if got := cfg.GetHealthStatus("ocr"); got.Status == config.HealthStatusUnhealthy {
+		t.Fatalf("expected %d failure(s) to stay below the demotion threshold, got %+v", belowThreshold, got)
+	}
+	if got := taskCalls.Load(); got != int32(belowThreshold) {
+		t.Fatalf("expected the backend to still be tried, got %d call(s)", got)
+	}
+
+	// One more observation crosses the threshold and moves it aside.
+	if recorder := runPredict(t, `{"ocr":{"text":"scan-me"}}`); recorder.Code != http.StatusOK {
+		t.Fatalf("expected the default backend to serve, got %d", recorder.Code)
+	}
+	if got := cfg.GetHealthStatus("ocr"); got.Status != config.HealthStatusUnhealthy {
+		t.Fatalf("expected %d gateway failures to demote the backend, got %+v", config.UnreachableThreshold, got)
+	}
+
+	// Once demoted, the fallback route stops spending an attempt on it.
+	callsBefore := taskCalls.Load()
+	if recorder := runPredict(t, `{"ocr":{"text":"scan-me"}}`); recorder.Code != http.StatusOK {
+		t.Fatalf("expected the default backend to serve, got %d", recorder.Code)
+	}
+	if got := taskCalls.Load(); got != callsBefore {
+		t.Fatalf("expected the demoted backend to be skipped, but it was called %d more time(s)", got-callsBefore)
+	}
+}
+
+// TestPredictHandlerClientFaultStopsFallbackChain checks that a rejected payload
+// is not replayed against the remaining backends.
+func TestPredictHandlerClientFaultStopsFallbackChain(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	var taskCalls atomic.Int32
+	taskServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		taskCalls.Add(1)
+		http.Error(w, "bad image data", http.StatusBadRequest)
+	}))
+	defer taskServer.Close()
+
+	var defaultCalls atomic.Int32
+	defaultServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		defaultCalls.Add(1)
+		_, _ = io.WriteString(w, `{"ocr":{"text":"default-result"}}`)
+	}))
+	defer defaultServer.Close()
+
+	setTestConfig(t, &config.Config{
+		DefaultBackend: "default",
+		Backends: []config.Backend{
+			{Name: "default", URL: defaultServer.URL},
+			{Name: "ocr", URL: taskServer.URL},
+		},
+		TaskRouting: map[string]string{tasks.OCRTask: "ocr"},
+		TaskRoutingPolicy: map[string]config.RoutingPolicy{
+			tasks.OCRTask: config.RoutingPolicyFallback,
+		},
+		Health: make(map[string]config.BackendHealth),
+	})
+
+	recorder := runPredict(t, `{"ocr":{"text":"scan-me"}}`)
+
+	if recorder.Code != http.StatusInternalServerError {
+		t.Fatalf("expected a failed prediction, got %d", recorder.Code)
+	}
+	if got := taskCalls.Load(); got != 1 {
+		t.Fatalf("expected the routed backend to be tried once, got %d", got)
+	}
+	if got := defaultCalls.Load(); got != 0 {
+		t.Fatalf("expected the rejected payload not to be replayed, but the default backend was called %d time(s)", got)
+	}
+}
+
+// TestPingHandlerVerdict pins the /ping contract: the answer reflects this
+// call's own probes, and a route only counts as servable if its backend answers
+// "pong" right now.
+func TestPingHandlerVerdict(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	live := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/ping" {
+			_, _ = io.WriteString(w, "pong")
+			return
+		}
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer live.Close()
+
+	// Answers, but not with the health contract's body.
+	notPong := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		_, _ = io.WriteString(w, "hi")
+	}))
+	defer notPong.Close()
+
+	dead := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	deadURL := dead.URL
+	dead.Close()
+
+	backends := func(pairs ...config.Backend) []config.Backend { return pairs }
+
+	cases := []struct {
+		name     string
+		config   *config.Config
+		expected int
+	}{
+		{
+			name: "everything reachable",
+			config: &config.Config{
+				DefaultBackend: "default",
+				Backends:       backends(config.Backend{Name: "default", URL: live.URL}),
+			},
+			expected: http.StatusOK,
+		},
+		{
+			name: "no backends configured",
+			config: &config.Config{
+				Backends: backends(),
+			},
+			expected: http.StatusServiceUnavailable,
+		},
+		{
+			name: "default backend unreachable",
+			config: &config.Config{
+				DefaultBackend: "default",
+				Backends:       backends(config.Backend{Name: "default", URL: deadURL}),
+			},
+			expected: http.StatusServiceUnavailable,
+		},
+		{
+			name: "strict route unreachable",
+			config: &config.Config{
+				DefaultBackend:    "default",
+				Backends:          backends(config.Backend{Name: "default", URL: live.URL}, config.Backend{Name: "ocr", URL: deadURL}),
+				TaskRouting:       map[string]string{tasks.OCRTask: "ocr"},
+				TaskRoutingPolicy: map[string]config.RoutingPolicy{tasks.OCRTask: config.RoutingPolicyStrict},
+			},
+			expected: http.StatusServiceUnavailable,
+		},
+		{
+			name: "fallback route unreachable degrades to default",
+			config: &config.Config{
+				DefaultBackend:    "default",
+				Backends:          backends(config.Backend{Name: "default", URL: live.URL}, config.Backend{Name: "ocr", URL: deadURL}),
+				TaskRouting:       map[string]string{tasks.OCRTask: "ocr"},
+				TaskRoutingPolicy: map[string]config.RoutingPolicy{tasks.OCRTask: config.RoutingPolicyFallback},
+			},
+			expected: http.StatusOK,
+		},
+		{
+			name: "route answers without the health body",
+			config: &config.Config{
+				DefaultBackend:    "default",
+				Backends:          backends(config.Backend{Name: "default", URL: live.URL}, config.Backend{Name: "ocr", URL: notPong.URL}),
+				TaskRouting:       map[string]string{tasks.OCRTask: "ocr"},
+				TaskRoutingPolicy: map[string]config.RoutingPolicy{tasks.OCRTask: config.RoutingPolicyStrict},
+			},
+			expected: http.StatusServiceUnavailable,
+		},
+		{
+			name: "modelType route unreachable with fallback policy",
+			config: &config.Config{
+				DefaultBackend:         "default",
+				Backends:               backends(config.Backend{Name: "default", URL: live.URL}, config.Backend{Name: "gpu", URL: deadURL}),
+				ModelTypeRouting:       map[string]string{"textual": "gpu"},
+				ModelTypeRoutingPolicy: map[string]config.RoutingPolicy{"textual": config.RoutingPolicyFallback},
+			},
+			expected: http.StatusOK,
+		},
+		{
+			name: "modelType route unreachable with strict policy",
+			config: &config.Config{
+				DefaultBackend:         "default",
+				Backends:               backends(config.Backend{Name: "default", URL: live.URL}, config.Backend{Name: "gpu", URL: deadURL}),
+				ModelTypeRouting:       map[string]string{"textual": "gpu"},
+				ModelTypeRoutingPolicy: map[string]config.RoutingPolicy{"textual": config.RoutingPolicyStrict},
+			},
+			expected: http.StatusServiceUnavailable,
+		},
+	}
+
+	for _, testCase := range cases {
+		t.Run(testCase.name, func(t *testing.T) {
+			if testCase.config.TaskRouting == nil {
+				testCase.config.TaskRouting = map[string]string{}
+			}
+			if testCase.config.ModelTypeRouting == nil {
+				testCase.config.ModelTypeRouting = map[string]string{}
+			}
+			if testCase.config.TaskRoutingPolicy == nil {
+				testCase.config.TaskRoutingPolicy = map[string]config.RoutingPolicy{}
+			}
+			if testCase.config.ModelTypeRoutingPolicy == nil {
+				testCase.config.ModelTypeRoutingPolicy = map[string]config.RoutingPolicy{}
+			}
+			testCase.config.Health = make(map[string]config.BackendHealth)
+			setTestConfig(t, testCase.config)
+
+			recorder := httptest.NewRecorder()
+			context, _ := gin.CreateTestContext(recorder)
+			context.Request = httptest.NewRequest(http.MethodGet, "/ping", nil)
+
+			PingHandler(context)
+			// c.Status only records the code internally; gin's engine flushes it
+			// after the handler chain, which calling the handler directly skips.
+			context.Writer.WriteHeaderNow()
+
+			if recorder.Code != testCase.expected {
+				t.Fatalf("expected %d, got %d", testCase.expected, recorder.Code)
+			}
+			if testCase.expected == http.StatusOK && recorder.Body.String() != "pong" {
+				t.Fatalf("expected pong body, got %q", recorder.Body.String())
+			}
+		})
 	}
 }

@@ -3,6 +3,7 @@ package config
 import (
 	"encoding/json"
 	"testing"
+	"time"
 
 	"immich_ml_proxy/tasks"
 )
@@ -76,8 +77,10 @@ func TestConfigHealthAndQueryAccessors(t *testing.T) {
 		Health: make(map[string]BackendHealth),
 	}
 
-	cfg.SetHealthStatus("ocr", HealthStatusHealthy, "")
-	cfg.SetHealthStatus("default", HealthStatusUnhealthy, "down")
+	now := time.Now()
+	cfg.RecordBackendReachable("ocr", now)
+	// One unreachable observation is not enough to demote a backend.
+	cfg.RecordBackendUnreachable("default", "down", now)
 
 	if got := cfg.GetHealthStatus("ocr"); got.Status != HealthStatusHealthy || got.LastCheck == 0 {
 		t.Fatalf("expected healthy backend health status, got %+v", got)
@@ -127,6 +130,48 @@ func TestConfigHealthAndQueryAccessors(t *testing.T) {
 	}
 	if got := cfg.GetAllModelTypes(); len(got) != 1 || got[0] != "visual" {
 		t.Fatalf("expected one modelType, got %#v", got)
+	}
+}
+
+func TestHealthNeedsConsecutiveUnreachableObservations(t *testing.T) {
+	cfg := newTestConfig()
+	base := time.Now()
+
+	cfg.RecordBackendUnreachable("backend", "connection refused", base)
+	if got := cfg.GetHealthStatus("backend"); got.Status != HealthStatusUnknown {
+		t.Fatalf("expected a single failure to stay unknown, got %q", got.Status)
+	}
+
+	cfg.RecordBackendUnreachable("backend", "connection refused", base.Add(time.Second))
+	if got := cfg.GetHealthStatus("backend"); got.Status != HealthStatusUnhealthy {
+		t.Fatalf("expected the threshold failure to demote, got %q", got.Status)
+	} else if got.Failures != UnreachableThreshold {
+		t.Fatalf("expected %d consecutive failures, got %d", UnreachableThreshold, got.Failures)
+	}
+
+	// Recovery is deliberately immediate: one answer proves reachability.
+	cfg.RecordBackendReachable("backend", base.Add(2*time.Second))
+	if got := cfg.GetHealthStatus("backend"); got.Status != HealthStatusHealthy || got.Failures != 0 {
+		t.Fatalf("expected one success to restore health, got %+v", got)
+	}
+}
+
+func TestHealthDiscardsOutOfOrderObservations(t *testing.T) {
+	cfg := newTestConfig()
+	base := time.Now()
+
+	// A successful exchange finishes first...
+	cfg.RecordBackendReachable("backend", base.Add(10*time.Second))
+	// ...then a slower probe that started earlier finally reports a timeout.
+	cfg.RecordBackendUnreachable("backend", "timeout", base)
+	cfg.RecordBackendUnreachable("backend", "timeout", base.Add(time.Second))
+
+	got := cfg.GetHealthStatus("backend")
+	if got.Status != HealthStatusHealthy {
+		t.Fatalf("expected the stale probe to be discarded, got %+v", got)
+	}
+	if got.LastCheck != base.Add(10*time.Second).Unix() {
+		t.Fatalf("expected LastCheck to keep the newest observation, got %d", got.LastCheck)
 	}
 }
 

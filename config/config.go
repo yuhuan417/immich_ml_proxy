@@ -28,10 +28,24 @@ const (
 	RoutingPolicyFallback RoutingPolicy = "fallback"
 )
 
+// UnreachableThreshold is how many consecutive unreachable observations it
+// takes before a backend is reported as unhealthy.
+//
+// A backend that is genuinely down fails back to back, so the threshold is
+// reached immediately; a single blip does not demote it. Recovery is
+// deliberately one-sided: any single success restores the backend, because
+// wrongly skipping a healthy backend costs more than trying a dead one.
+const UnreachableThreshold = 2
+
 type BackendHealth struct {
-	Status    HealthStatus `json:"status"`
-	LastCheck int64        `json:"lastCheck"` // Unix timestamp
-	Error     string       `json:"error,omitempty"`
+	Status HealthStatus `json:"status"`
+	// LastCheck is when the observation behind Status was made, not when it was
+	// recorded. Observations that arrive out of order are discarded.
+	LastCheck int64  `json:"lastCheck"` // Unix timestamp
+	Error     string `json:"error,omitempty"`
+	// Failures counts consecutive unreachable observations. Reset by any
+	// observation that proves the backend was reached.
+	Failures int `json:"failures,omitempty"`
 }
 
 type Config struct {
@@ -276,15 +290,60 @@ func (c *Config) ToJSON() ([]byte, error) {
 	return json.MarshalIndent(result, "", "  ")
 }
 
-// SetHealthStatus sets the health status for a backend
-func (c *Config) SetHealthStatus(backendName string, status HealthStatus, error string) {
+// RecordBackendReachable records that a backend answered at observedAt.
+//
+// Reaching a backend is the only thing that makes it healthy, and a single
+// success is enough: either we got a response out of it or we did not.
+func (c *Config) RecordBackendReachable(backendName string, observedAt time.Time) {
+	c.record(backendName, false, "", observedAt)
+}
+
+// RecordBackendUnreachable records that a backend could not be reached at
+// observedAt, counting towards UnreachableThreshold.
+//
+// Only transport-level failures belong here. An HTTP response of any status
+// means the host is up, so status codes must not be reported as unreachable.
+func (c *Config) RecordBackendUnreachable(backendName string, cause string, observedAt time.Time) {
+	c.record(backendName, true, cause, observedAt)
+}
+
+func (c *Config) record(backendName string, unreachable bool, cause string, observedAt time.Time) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.Health[backendName] = BackendHealth{
-		Status:    status,
-		LastCheck: time.Now().Unix(),
-		Error:     error,
+
+	previous, seen := c.Health[backendName]
+	stamp := observedAt.Unix()
+	if seen && stamp < previous.LastCheck {
+		// A slow observation that began earlier must not overwrite a newer one.
+		return
 	}
+
+	if !unreachable {
+		c.Health[backendName] = BackendHealth{
+			Status:    HealthStatusHealthy,
+			LastCheck: stamp,
+		}
+		return
+	}
+
+	health := BackendHealth{
+		LastCheck: stamp,
+		Failures:  previous.Failures + 1,
+	}
+
+	if health.Failures >= UnreachableThreshold {
+		health.Status = HealthStatusUnhealthy
+		health.Error = cause
+	} else {
+		// Not enough evidence to demote yet, so hold the previous verdict and
+		// keep the cause out of the UI until we commit to it.
+		health.Status = previous.Status
+		if health.Status == "" {
+			health.Status = HealthStatusUnknown
+		}
+	}
+
+	c.Health[backendName] = health
 }
 
 // GetHealthStatus gets the health status for a backend

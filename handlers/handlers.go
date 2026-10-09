@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"immich_ml_proxy/config"
 	"immich_ml_proxy/debug"
@@ -10,6 +11,7 @@ import (
 	"net/http"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/gin-gonic/gin"
 )
@@ -47,94 +49,92 @@ func RootHandler(c *gin.Context) {
 </html>`))
 }
 
-// PingHandler handles GET /ping - checks health status of all backends and returns "pong" if each routed task/model type has a healthy backend
+// PingHandler handles GET /ping - probes every backend and returns "pong" if
+// each routed task and model type can be served right now.
+//
+// The verdict comes from this call's own probe results, never from the shared
+// health field. That field is a routing hint that converges over several
+// observations (see config.UnreachableThreshold), whereas a liveness probe has
+// to answer for the moment it ran.
 func PingHandler(c *gin.Context) {
-	backendURLs := cfg.GetAllBackendURLs()
-	if len(backendURLs) == 0 {
+	backends := cfg.GetBackends()
+	if len(backends) == 0 {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
-	backends := cfg.GetBackends()
 
+	probes := make([]proxy.BackendStatus, len(backends))
 	var wg sync.WaitGroup
-	statuses := make([]proxy.BackendStatus, len(backendURLs))
-	statusesMu := sync.Mutex{}
 
-	// Check health of all backends in parallel
 	for i, backend := range backends {
 		wg.Add(1)
 		go func(idx int, b config.Backend) {
 			defer wg.Done()
-			status := proxy.CheckBackendHealth(b.URL)
-			statusesMu.Lock()
-			statuses[idx] = status
-			statusesMu.Unlock()
 
-			// Update health status in config
+			// Stamped before the request so a slow probe cannot overwrite a
+			// fresh observation that completed while it was in flight.
+			observedAt := time.Now()
+			status := proxy.CheckBackendHealth(b.URL)
+			probes[idx] = status
+
 			if status.Status == "healthy" {
-				cfg.SetHealthStatus(b.Name, config.HealthStatusHealthy, "")
+				cfg.RecordBackendReachable(b.Name, observedAt)
 			} else {
-				cfg.SetHealthStatus(b.Name, config.HealthStatusUnhealthy, status.Error)
+				cfg.RecordBackendUnreachable(b.Name, status.Error, observedAt)
 			}
 		}(i, backend)
 	}
 
 	wg.Wait()
 
-	// Check if default backend is healthy (it handles all non-routed types)
+	reached := make(map[string]bool, len(backends))
+	for i, backend := range backends {
+		reached[backend.Name] = probes[i].Status == "healthy"
+	}
+
+	// The default backend handles everything that is not routed.
 	defaultBackend := cfg.GetDefaultBackend()
-	if defaultBackend == nil {
+	if defaultBackend == nil || !reached[defaultBackend.Name] {
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
 
-	defaultBackendHealth := cfg.GetHealthStatus(defaultBackend.Name)
-	if defaultBackendHealth.Status != config.HealthStatusHealthy {
-		c.Status(http.StatusServiceUnavailable)
-		return
-	}
-
-	// Check if each routed task has at least one healthy backend.
-	// fallback policy allows this route to degrade to default backend.
-	allTasksHealthy := true
-
+	// Every strict route needs a backend that answered just now. Fallback
+	// routes may degrade to the default backend, so they only warn.
 	for _, taskName := range cfg.GetAllTasks() {
-		healthyBackends := cfg.GetHealthyBackendsByTask(taskName)
-		if len(healthyBackends) == 0 {
-			if cfg.GetTaskRoutingPolicy(taskName) == config.RoutingPolicyFallback {
-				continue
-			}
-			allTasksHealthy = false
-			break
+		if routeReached(cfg.GetBackendsByTask(taskName), reached) {
+			continue
 		}
-	}
-
-	if !allTasksHealthy {
+		if cfg.GetTaskRoutingPolicy(taskName) == config.RoutingPolicyFallback {
+			continue
+		}
 		c.Status(http.StatusServiceUnavailable)
 		return
 	}
 
 	for _, modelType := range cfg.GetAllModelTypes() {
-		policy := cfg.GetModelTypeRoutingPolicy(modelType)
 		backend := cfg.GetBackendByModelType(modelType)
-		if backend == nil {
-			if policy == config.RoutingPolicyFallback {
-				continue
-			}
-			c.Status(http.StatusServiceUnavailable)
-			return
+		if backend != nil && reached[backend.Name] {
+			continue
 		}
-		backendHealth := cfg.GetHealthStatus(backend.Name)
-		if backendHealth.Status != config.HealthStatusHealthy {
-			if policy == config.RoutingPolicyFallback {
-				continue
-			}
-			c.Status(http.StatusServiceUnavailable)
-			return
+		if cfg.GetModelTypeRoutingPolicy(modelType) == config.RoutingPolicyFallback {
+			continue
 		}
+		c.Status(http.StatusServiceUnavailable)
+		return
 	}
 
 	c.Data(http.StatusOK, "text/plain", []byte("pong"))
+}
+
+// routeReached reports whether any backend of a route answered this probe.
+func routeReached(backends []config.Backend, reached map[string]bool) bool {
+	for _, backend := range backends {
+		if reached[backend.Name] {
+			return true
+		}
+	}
+	return false
 }
 
 // PredictHandler handles POST /predict - groups dependent tasks together and
@@ -255,6 +255,15 @@ func executeDispatchGroup(r *http.Request, debugTraceID string, group proxy.Disp
 		}
 
 		attemptErrors = append(attemptErrors, fmt.Sprintf("%s: %v", attempt.backend.Name, err))
+
+		// A 4xx means the backend rejected this payload. The backend is fine,
+		// so replaying the same request elsewhere cannot produce a different
+		// answer — stop instead of burning the fallback chain on it.
+		var statusErr *backendStatusError
+		if errors.As(err, &statusErr) && statusErr.clientFault() {
+			break
+		}
+
 		if !attempt.continueOnFailure {
 			break
 		}
@@ -270,7 +279,41 @@ func executeDispatchGroup(r *http.Request, debugTraceID string, group proxy.Disp
 	return nil, fmt.Errorf("all backends failed for %s: %s", group.Key, strings.Join(attemptErrors, "; "))
 }
 
+// backendStatusError carries the status a backend answered with, so callers can
+// tell a request-level rejection from a server-level failure. Callers already
+// prefix the backend name, so it is not repeated here.
+type backendStatusError struct {
+	code int
+	body string
+}
+
+func (e *backendStatusError) Error() string {
+	return fmt.Sprintf("backend returned status %d: %s", e.code, e.body)
+}
+
+// clientFault reports whether the backend rejected the request itself rather
+// than failing to serve it.
+func (e *backendStatusError) clientFault() bool {
+	return e.code >= 400 && e.code < http.StatusInternalServerError
+}
+
+// isGatewayFailure reports whether a status means "this endpoint could not serve
+// the request", as opposed to "it served the request and did not like it".
+//
+// Immich ML only ever answers 400, 422, 500 or 200, so these codes come from
+// the endpoint or from a proxy in front of it reporting a dead upstream.
+func isGatewayFailure(code int) bool {
+	switch code {
+	case http.StatusBadGateway, http.StatusServiceUnavailable, http.StatusGatewayTimeout:
+		return true
+	}
+	return false
+}
+
 func executeDispatchAttempt(r *http.Request, debugTraceID string, attempt dispatchAttempt, entriesJSON string) (map[string]interface{}, error) {
+	// Stamped before the request so a slow attempt cannot overwrite a fresh
+	// observation that completed while it was in flight.
+	observedAt := time.Now()
 	resp, bodyBytes, outgoingContentType, err := proxy.ForwardPredictRequestWithType(attempt.backend.URL, r, entriesJSON)
 	debugHeaders := cloneHeaderWithContentType(r.Header, outgoingContentType)
 	if err != nil {
@@ -280,7 +323,9 @@ func executeDispatchAttempt(r *http.Request, debugTraceID string, attempt dispat
 			debug.GetInstance().RecordError(recordID, err)
 		}
 
-		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, err.Error())
+		// A transport failure is the only thing here that says the backend
+		// itself is unreachable. See the health note in executeDispatchGroup.
+		cfg.RecordBackendUnreachable(attempt.backend.Name, err.Error(), observedAt)
 		return nil, err
 	}
 	defer resp.Body.Close()
@@ -297,22 +342,37 @@ func executeDispatchAttempt(r *http.Request, debugTraceID string, attempt dispat
 	}
 
 	if readErr != nil {
-		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, readErr.Error())
+		// The connection broke mid-response, which is also a transport failure.
+		cfg.RecordBackendUnreachable(attempt.backend.Name, readErr.Error(), observedAt)
 		return nil, readErr
 	}
 
+	// The backend answered, so it is up. What it answered with decides whether
+	// that counts as evidence that it cannot serve:
+	//
+	//   4xx          the request was at fault; the backend is fine
+	//   500          ambiguous — Immich ML returns it both for a broken model
+	//                and for an unhandled error on bad client data
+	//   502/503/504  the endpoint itself says it cannot serve, which is what a
+	//                proxy in front of a dead upstream reports
+	if isGatewayFailure(resp.StatusCode) {
+		cfg.RecordBackendUnreachable(attempt.backend.Name, resp.Status, observedAt)
+	} else {
+		cfg.RecordBackendReachable(attempt.backend.Name, observedAt)
+	}
+
 	if resp.StatusCode != http.StatusOK {
-		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, fmt.Sprintf("status %d: %s", resp.StatusCode, string(body)))
-		return nil, fmt.Errorf("backend returned status %d: %s", resp.StatusCode, string(body))
+		return nil, &backendStatusError{
+			code: resp.StatusCode,
+			body: string(body),
+		}
 	}
 
 	var result map[string]interface{}
 	if err := json.Unmarshal(body, &result); err != nil {
-		cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusUnhealthy, err.Error())
-		return nil, err
+		return nil, fmt.Errorf("backend %s answered with an unreadable body: %w", attempt.backend.Name, err)
 	}
 
-	cfg.SetHealthStatus(attempt.backend.Name, config.HealthStatusHealthy, "")
 	return result, nil
 }
 
