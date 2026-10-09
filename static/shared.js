@@ -3,26 +3,19 @@ function renderShellHeader(activePage, heroConfig) {
     if (!shell) return;
 
     const main = shell.querySelector('.content');
+    const brandTitle = heroConfig.brandTitle || 'Immich ML Proxy';
 
     const header = document.createElement('header');
-    header.className = 'masthead';
+    header.className = 'appbar';
     header.innerHTML = `
-        <div class="topbar">
-            <div class="brand-block">
-                <span class="brand-kicker">Operations Console</span>
-                <span class="brand-title">${heroConfig.brandTitle || 'Immich ML Proxy'}</span>
-            </div>
+        <div class="appbar-row">
+            <h1 class="visually-hidden">${heroConfig.title || brandTitle}</h1>
+            <a class="brand" href="/config">${brandTitle}</a>
             <nav class="nav-tabs" aria-label="Primary">
                 <a class="nav-link${activePage === 'config' ? ' active' : ''}" href="/config"${activePage === 'config' ? ' aria-current="page"' : ''}>Config</a>
                 <a class="nav-link${activePage === 'debug' ? ' active' : ''}" href="/debug"${activePage === 'debug' ? ' aria-current="page"' : ''}>Debug</a>
             </nav>
-        </div>
-        <div class="hero">
-            <div class="hero-copy">
-                <h1>${heroConfig.title}</h1>
-                ${heroConfig.subtitle ? `<p>${heroConfig.subtitle}</p>` : ''}
-            </div>
-            <div class="hero-status" id="heroStatus">
+            <div class="appbar-status" id="heroStatus">
                 ${heroConfig.statusHTML || ''}
             </div>
         </div>
@@ -37,6 +30,7 @@ function renderShellHeader(activePage, heroConfig) {
 
 function createNoticeManager() {
     let noticeTimer = null;
+    let dismissBound = false;
 
     function showNotice(message, type, opts) {
         const notice = document.getElementById('notice');
@@ -44,6 +38,12 @@ function createNoticeManager() {
 
         type = type || 'info';
         opts = opts || {};
+
+        if (!dismissBound) {
+            // Tapping the toast clears it early; useful on touch devices.
+            notice.addEventListener('click', hideNotice);
+            dismissBound = true;
+        }
 
         if (noticeTimer) {
             clearTimeout(noticeTimer);
@@ -61,6 +61,11 @@ function createNoticeManager() {
     function hideNotice() {
         const notice = document.getElementById('notice');
         if (!notice) return;
+
+        if (noticeTimer) {
+            clearTimeout(noticeTimer);
+            noticeTimer = null;
+        }
 
         notice.className = 'notice';
         notice.textContent = '';

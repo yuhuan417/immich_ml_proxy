@@ -2,99 +2,64 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
     <title>Immich ML Proxy - Debug</title>
     <link rel="stylesheet" href="/shared.css">
     <style>
-        :root {
-            --incoming-bg: #e6f4ea;
-            --incoming-text: #1e6b3b;
-            --outgoing-bg: #e7f0ff;
-            --outgoing-text: #1953a6;
-        }
+        /* Capture controls */
 
-        .shell { max-width: 1500px; }
-
-        /* Debug-specific status pills */
-
-        .trace-status,
-        .record-status,
-        .record-type,
-        .trace-chip,
-        .inline-badge,
-        .status-code {
-            display: inline-flex;
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
             align-items: center;
-            justify-content: center;
-            padding: 3px 8px;
-            border-radius: 999px;
-            font-size: 11px;
-            font-weight: 700;
-            letter-spacing: 0.04em;
+            gap: 10px 20px;
         }
 
-        .trace-status.success,
-        .record-status.success,
-        .status-code.success {
-            background: var(--success-bg);
-            color: var(--success-text);
+        .control-inline {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            min-width: 0;
         }
 
-        .trace-status.error,
-        .record-status.error,
-        .status-code.error {
-            background: var(--error-bg);
-            color: var(--error-text);
+        .control-label {
+            font-size: 13px;
+            min-width: 0;
         }
 
-        .trace-status.pending,
-        .record-status.pending,
-        .status-code.pending {
-            background: var(--warning-bg);
-            color: var(--warning-text);
+        .control-label strong {
+            font-weight: 650;
         }
 
-        /* Controls */
-
-        .control-grid,
-        .filter-grid,
-        .stats-grid {
-            display: grid;
-            gap: 16px;
+        #debugStatusLabel {
+            text-transform: lowercase;
         }
 
-        .control-grid {
-            grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+        .control-inline input[type="number"] {
+            width: 84px;
         }
 
-        .filter-grid {
-            grid-template-columns: 1.4fr repeat(3, minmax(160px, 0.7fr));
-        }
-
-        .stats-grid {
-            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        .controls-actions {
+            margin-left: auto;
         }
 
         /* Switch */
 
-        .switch-row {
-            display: flex;
-            align-items: center;
-            gap: 12px;
-            flex-wrap: wrap;
-        }
-
         .switch {
             position: relative;
             display: inline-block;
-            width: 58px;
-            height: 30px;
+            flex: none;
+            width: 44px;
+            height: 26px;
         }
 
         .switch input {
+            position: absolute;
+            width: 1px;
+            height: 1px;
             opacity: 0;
-            width: 0;
-            height: 0;
+            margin: 0;
         }
 
         .slider {
@@ -102,19 +67,20 @@
             inset: 0;
             background: #c4cfdd;
             border-radius: 999px;
-            transition: 0.25s;
+            pointer-events: none;
+            transition: background-color 0.15s ease;
         }
 
         .slider::before {
             content: "";
             position: absolute;
-            height: 22px;
-            width: 22px;
-            left: 4px;
-            bottom: 4px;
-            background: white;
+            top: 3px;
+            left: 3px;
+            width: 20px;
+            height: 20px;
+            background: #fff;
             border-radius: 50%;
-            transition: 0.25s;
+            transition: transform 0.15s ease;
         }
 
         .switch input:checked + .slider {
@@ -122,152 +88,131 @@
         }
 
         .switch input:checked + .slider::before {
-            transform: translateX(28px);
+            transform: translateX(18px);
         }
 
-        .control-meta {
-            color: var(--text-muted);
-            line-height: 1.55;
+        .switch input:focus-visible + .slider {
+            outline: 2px solid var(--accent);
+            outline-offset: 2px;
         }
 
-        /* Stats */
+        /* Filters */
 
-        .stat-value {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .stat-label {
-            color: var(--text-muted);
-            margin-top: 4px;
-            font-size: 11px;
-        }
-
-        /* Loading */
-
-        .loading {
-            display: none;
-            border: 1px dashed var(--panel-border);
-            border-radius: 18px;
-            padding: 36px 24px;
-            background: var(--panel-muted);
-            text-align: center;
-            color: var(--text-muted);
-            line-height: 1.6;
-        }
-
-        .loading.show {
-            display: block;
-        }
-
-        .loading::after {
-            content: "";
-            display: inline-block;
-            width: 18px;
-            height: 18px;
-            margin-left: 10px;
-            border: 2px solid var(--accent);
-            border-top-color: transparent;
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-            vertical-align: middle;
+        .filter-grid {
+            display: grid;
+            gap: 8px 10px;
+            grid-template-columns: minmax(0, 2.2fr) repeat(3, minmax(0, 1fr));
         }
 
         /* Trace list */
 
         .trace-list {
             display: grid;
-            gap: 10px;
+            gap: 8px;
         }
 
         .trace-item {
-            background: white;
-            border: 1px solid var(--panel-border);
-            border-radius: 10px;
-            overflow: hidden;
-            box-shadow: 0 6px 16px rgba(20, 31, 46, 0.06);
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            min-width: 0;
         }
 
         .trace-header {
-            display: grid;
-            grid-template-columns: minmax(0, 1fr) auto;
-            gap: 10px;
-            padding: 12px 14px;
+            display: flex;
+            flex-wrap: wrap;
             align-items: flex-start;
+            gap: 6px 10px;
+            padding: 10px 12px;
         }
 
         .trace-header.pinned {
-            background:
-                linear-gradient(180deg, rgba(255, 242, 217, 0.38) 0%, rgba(255, 255, 255, 0) 100%);
+            background: #fffdf5;
         }
 
         .trace-toggle {
-            border: none;
-            background: transparent;
-            cursor: pointer;
-            text-align: left;
-            width: 100%;
-            color: inherit;
+            display: grid;
+            flex: 1 1 240px;
+            gap: 4px;
+            min-width: 0;
             padding: 0;
-        }
-
-        .trace-toggle:hover .trace-url {
-            color: var(--text);
+            background: none;
+            border: 0;
+            color: inherit;
+            text-align: left;
+            cursor: pointer;
         }
 
         .trace-topline,
-        .trace-meta,
-        .trace-actions,
-        .record-title,
-        .record-card-meta,
-        .multipart-meta,
-        .multipart-title {
+        .trace-meta {
             display: flex;
             flex-wrap: wrap;
-            gap: 10px;
             align-items: center;
+            gap: 6px;
         }
 
         .trace-request,
         .record-route {
             display: flex;
             flex-wrap: wrap;
-            gap: 8px;
             align-items: baseline;
-            margin: 6px 0;
+            gap: 6px;
+            min-width: 0;
         }
 
         .trace-method,
         .record-method {
-            font-size: 14px;
-            font-weight: 800;
-            color: var(--text);
+            font-size: 13px;
+            font-weight: 700;
+            white-space: nowrap;
         }
 
         .trace-url,
         .record-url {
             color: var(--text-muted);
-            word-break: break-word;
-            line-height: 1.5;
+            font-size: 13px;
+            overflow-wrap: anywhere;
         }
 
         .trace-summary-meta {
-            display: grid;
+            display: flex;
+            align-items: center;
             gap: 10px;
-            justify-items: end;
+            margin-left: auto;
         }
 
         .trace-time {
-            font-size: 13px;
+            font-size: 12px;
             color: var(--text-muted);
+            white-space: nowrap;
+        }
+
+        /* Chips hold server-supplied text, so clip rather than let a long
+           content type or error string push the page sideways. */
+        .trace-chip,
+        .inline-badge {
+            display: inline-flex;
+            align-items: center;
+            max-width: 100%;
+            padding: 2px 7px;
+            border-radius: var(--radius-sm);
+            background: #eef1f5;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 650;
+            overflow-wrap: anywhere;
+        }
+
+        .trace-chip.id-chip {
+            font-family: var(--font-mono);
+            font-weight: 500;
         }
 
         .trace-details {
             display: none;
-            padding: 0 14px 14px;
-            background: linear-gradient(180deg, rgba(244, 247, 251, 0.72) 0%, rgba(255, 255, 255, 1) 120px);
-            border-top: 1px solid var(--panel-border);
+            padding: 10px 12px 12px;
+            background: var(--panel-muted);
+            border-top: 1px solid var(--border);
         }
 
         .trace-details.show {
@@ -276,186 +221,182 @@
 
         .trace-flow {
             display: grid;
-            gap: 10px;
-            padding-top: 12px;
-        }
-
-        .trace-chip,
-        .inline-badge {
-            background: #eef3f9;
-            color: var(--text-muted);
-            text-transform: none;
-        }
-
-        .trace-chip.id-chip {
-            font-size: 11px;
-            padding: 3px 8px;
-            opacity: 0.8;
-        }
-
-        .trace-chip.mono,
-        .inline-badge.mono,
-        .mono {
-            font-variant-numeric: tabular-nums;
-        }
-
-        .record-type.incoming {
-            background: var(--incoming-bg);
-            color: var(--incoming-text);
-            text-transform: uppercase;
-        }
-
-        .record-type.outgoing {
-            background: var(--outgoing-bg);
-            color: var(--outgoing-text);
-            text-transform: uppercase;
-        }
-
-        .trace-actions {
-            justify-content: flex-end;
-        }
-
-        .trace-pin[aria-pressed="true"] {
-            background: var(--warning-bg);
-            color: var(--warning-text);
+            gap: 8px;
         }
 
         /* Record cards */
 
         .record-card {
-            background: white;
-            border: 1px solid var(--panel-border);
-            border-radius: 8px;
-            padding: 12px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 10px;
+            min-width: 0;
         }
 
         .record-card-header {
             display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
-            gap: 10px;
-            margin-bottom: 10px;
             flex-wrap: wrap;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 6px 10px;
+            margin-bottom: 8px;
         }
 
         .record-card-main {
-            flex: 1;
+            display: grid;
+            flex: 1 1 200px;
+            gap: 4px;
             min-width: 0;
+        }
+
+        .record-title,
+        .record-card-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .record-type {
+            display: inline-flex;
+            align-items: center;
+            padding: 2px 7px;
+            border-radius: var(--radius-sm);
+            background: #eef1f5;
+            color: var(--text-muted);
+            font-size: 11px;
+            font-weight: 700;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .record-type.incoming {
+            background: var(--success-bg);
+            color: var(--success-text);
+        }
+
+        .record-type.outgoing {
+            background: var(--info-bg);
+            color: var(--info-text);
         }
 
         .record-sections {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 16px;
+            gap: 8px;
+            grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
         }
 
         .detail-section {
             background: var(--panel-muted);
-            border: 1px solid var(--panel-border);
-            border-radius: 8px;
-            padding: 10px;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 8px;
+            min-width: 0;
         }
 
         .detail-section h4 {
+            margin-bottom: 6px;
             font-size: 11px;
-            color: var(--text-muted);
+            font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
-            margin-bottom: 8px;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
+        }
+
+        .detail-section > * + * {
+            margin-top: 8px;
         }
 
         .error-block {
-            margin-bottom: 10px;
-            background: var(--error-bg);
-            color: var(--error-text);
-            border: 1px solid rgba(140, 36, 36, 0.18);
             padding: 8px 10px;
-            border-radius: 8px;
-            line-height: 1.4;
+            margin-bottom: 8px;
+            background: var(--error-bg);
+            border: 1px solid #f0c2c0;
+            border-radius: 5px;
+            color: var(--error-text);
             font-size: 12px;
+            overflow-wrap: anywhere;
+        }
+
+        .inline-alert {
+            padding: 8px 10px;
+            background: var(--warning-bg);
+            border: 1px solid #e8d09a;
+            border-radius: 5px;
+            color: var(--warning-text);
+            font-size: 12px;
+            overflow-wrap: anywhere;
         }
 
         .meta-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
-            gap: 8px;
-            margin-bottom: 8px;
+            gap: 6px;
+            grid-template-columns: repeat(auto-fit, minmax(min(130px, 100%), 1fr));
         }
 
         .meta-card {
-            background: white;
-            border: 1px solid var(--panel-border);
-            border-radius: 8px;
-            padding: 8px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            padding: 6px 8px;
+            min-width: 0;
         }
 
         .meta-card .label {
             font-size: 10px;
             font-weight: 700;
             text-transform: uppercase;
-            letter-spacing: 0.06em;
+            letter-spacing: 0.04em;
             color: var(--text-muted);
-            margin-bottom: 4px;
         }
 
         .meta-card .value {
             font-size: 12px;
-            line-height: 1.4;
-            color: var(--text);
-            word-break: break-word;
+            overflow-wrap: anywhere;
         }
 
         .code-block,
         .preview-block,
         .body-placeholder,
         .multipart-card {
-            background: white;
-            border: 1px solid var(--panel-border);
-            border-radius: 8px;
+            background: #fff;
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            min-width: 0;
         }
 
         .code-block pre,
         .preview-block pre {
             margin: 0;
-            padding: 10px;
-            overflow-x: auto;
-            font-size: 11px;
+            padding: 8px 10px;
+            font-family: var(--font-mono);
+            font-size: 12px;
             line-height: 1.5;
             white-space: pre-wrap;
-            word-break: break-word;
+            overflow-wrap: anywhere;
             color: var(--text);
         }
 
         .preview-header {
             display: flex;
-            justify-content: space-between;
             align-items: center;
+            justify-content: space-between;
             gap: 8px;
-            padding: 6px 10px;
-            border-bottom: 1px solid var(--panel-border);
+            padding: 5px 10px;
+            border-bottom: 1px solid var(--border);
             font-size: 10px;
             font-weight: 700;
-            color: var(--text-muted);
             text-transform: uppercase;
-            letter-spacing: 0.05em;
+            letter-spacing: 0.04em;
+            color: var(--text-muted);
         }
 
         .body-placeholder {
-            padding: 10px;
-            color: var(--text-muted);
-            line-height: 1.4;
-            font-size: 12px;
-        }
-
-        .inline-alert {
-            margin-bottom: 8px;
-            background: #fff6e8;
-            border: 1px solid #ffd7a3;
-            color: #855300;
             padding: 8px 10px;
-            border-radius: 8px;
-            line-height: 1.4;
+            color: var(--text-muted);
             font-size: 12px;
+            overflow-wrap: anywhere;
         }
 
         .multipart-grid {
@@ -464,53 +405,60 @@
         }
 
         .multipart-card {
-            padding: 10px;
+            padding: 8px;
+        }
+
+        .multipart-title,
+        .multipart-meta {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .multipart-meta {
+            margin: 6px 0;
         }
 
         .multipart-name {
-            font-weight: 700;
-            color: var(--text);
+            font-weight: 650;
+            overflow-wrap: anywhere;
         }
 
-        .toolbar-note {
-            color: var(--text-muted);
-            line-height: 1.55;
+        .mono {
+            font-family: var(--font-mono);
         }
 
-        .hidden-helper {
-            position: absolute;
-            width: 1px;
-            height: 1px;
-            padding: 0;
-            margin: -1px;
-            overflow: hidden;
-            clip: rect(0, 0, 0, 0);
-            border: 0;
-        }
-
-        @media (max-width: 1100px) {
-            .filter-grid {
-                grid-template-columns: 1fr 1fr;
-            }
-        }
+        /* Responsive */
 
         @media (max-width: 900px) {
             .filter-grid {
-                grid-template-columns: 1fr;
+                grid-template-columns: repeat(2, minmax(0, 1fr));
             }
 
-            .trace-header,
-            .record-card-header {
-                grid-template-columns: 1fr;
+            .filter-grid .field-search {
+                grid-column: 1 / -1;
+            }
+        }
+
+        @media (max-width: 720px) {
+            .controls-actions {
+                width: 100%;
+                margin-left: 0;
             }
 
-            .trace-actions,
-            .record-card-meta {
-                justify-content: flex-start;
+            .controls-actions .btn {
+                flex: 1 1 auto;
             }
 
             .trace-summary-meta {
-                justify-items: start;
+                width: 100%;
+                margin-left: 0;
+                justify-content: space-between;
+            }
+
+            .record-card-meta {
+                width: 100%;
             }
         }
     </style>
@@ -520,60 +468,30 @@
         <main class="content">
             <div id="notice" class="notice" role="status" aria-live="polite"></div>
 
-            <section class="control-grid">
-                <div class="panel">
-                    <div class="panel-header">
-                        <div>
-                            <div class="panel-title">Capture Controls</div>
-                            <p class="panel-subtitle">Enable or disable request capture for all traffic.</p>
-                        </div>
-                    </div>
-                    <div class="switch-row">
+            <section class="panel" aria-label="Capture controls">
+                <div class="controls">
+                    <div class="control-inline" title="Capture inbound requests and downstream calls.">
                         <label class="switch" for="debugToggle">
                             <input type="checkbox" id="debugToggle" role="switch" aria-label="Toggle debug capture">
                             <span class="slider" aria-hidden="true"></span>
                         </label>
-                        <div class="control-meta">
-                            <strong id="debugStatusLabel">Disabled</strong><br>
-                            Capture inbound requests and downstream calls.
-                        </div>
+                        <span class="control-label">Debug <strong id="debugStatusLabel">Disabled</strong></span>
                     </div>
-                    <div class="switch-row" style="margin-top: 10px;">
+                    <div class="control-inline" title="Hide /ping health-check requests from the trace list.">
                         <label class="switch" for="filterPingToggle">
                             <input type="checkbox" id="filterPingToggle" role="switch" aria-label="Toggle /ping filtering" checked>
                             <span class="slider" aria-hidden="true"></span>
                         </label>
-                        <div class="control-meta">
-                            <strong id="filterPingLabel">Filter /ping</strong><br>
-                            Hide health check requests from the trace list.
-                        </div>
+                        <span class="control-label" id="filterPingLabel">Ping filter</span>
                     </div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-header">
-                        <div>
-                            <div class="panel-title">Storage Limits</div>
-                            <p class="panel-subtitle">Max debug records retained in memory.</p>
-                        </div>
+                    <div class="control-inline">
+                        <label class="control-label" for="maxRecords">Max records</label>
+                        <input type="number" id="maxRecords" min="1" max="10000" value="100" inputmode="numeric">
                     </div>
-                    <div class="field">
-                        <label for="maxRecords">Max Records</label>
-                        <input type="number" id="maxRecords" min="1" max="10000" value="100">
-                    </div>
-                </div>
-
-                <div class="panel">
-                    <div class="panel-header">
-                        <div>
-                            <div class="panel-title">Live Refresh</div>
-                            <p class="panel-subtitle">Refresh immediately, or pause polling.</p>
-                        </div>
-                    </div>
-                    <div class="btn-row">
-                        <button id="refreshButton" class="btn btn-primary" type="button">Refresh Now</button>
-                        <button id="pauseButton" class="btn btn-secondary" type="button" aria-pressed="false">Pause Auto-Refresh</button>
-                        <button id="clearButton" class="btn btn-danger" type="button">Clear Records</button>
+                    <div class="btn-row controls-actions">
+                        <button id="refreshButton" class="btn btn-primary" type="button">Refresh</button>
+                        <button id="pauseButton" class="btn btn-secondary" type="button" aria-pressed="false" disabled>Pause</button>
+                        <button id="clearButton" class="btn btn-danger" type="button">Clear</button>
                     </div>
                 </div>
             </section>
@@ -581,72 +499,72 @@
             <section class="panel">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Filters</div>
-                        <p class="panel-subtitle">Search by trace ID, method, route, backend URL, or error message.</p>
+                        <h2 class="panel-title">Filters</h2>
+                        <p class="panel-subtitle">Search matches trace ID, method, route, backend URL, and error text.</p>
                     </div>
                 </div>
                 <div class="filter-grid">
-                    <div class="field">
+                    <div class="field field-search">
                         <label for="searchFilter">Search</label>
-                        <input type="search" id="searchFilter" placeholder="Trace ID, route, backend URL, error text">
+                        <input type="search" id="searchFilter" placeholder="Trace ID, route, backend URL, error" autocomplete="off" autocapitalize="off" spellcheck="false" enterkeyhint="search">
                     </div>
                     <div class="field">
                         <label for="statusFilter">Status</label>
                         <select id="statusFilter">
-                            <option value="all">All traces</option>
-                            <option value="error">Failed only</option>
-                            <option value="success">Completed only</option>
-                            <option value="pending">Pending only</option>
+                            <option value="all">All</option>
+                            <option value="error">Failed</option>
+                            <option value="success">Completed</option>
+                            <option value="pending">Pending</option>
                         </select>
                     </div>
                     <div class="field">
                         <label for="payloadFilter">Payload</label>
                         <select id="payloadFilter">
-                            <option value="all">Any payload</option>
-                            <option value="multipart">Contains multipart</option>
-                            <option value="binary">Contains binary</option>
-                            <option value="json">Contains JSON</option>
-                            <option value="text">Contains text/XML</option>
+                            <option value="all">Any</option>
+                            <option value="multipart">Multipart</option>
+                            <option value="binary">Binary</option>
+                            <option value="json">JSON</option>
+                            <option value="text">Text</option>
                         </select>
                     </div>
                     <div class="field">
                         <label for="scopeFilter">Scope</label>
                         <select id="scopeFilter">
-                            <option value="all">All traces</option>
-                            <option value="pinned">Pinned only</option>
+                            <option value="all">All</option>
+                            <option value="pinned">Pinned</option>
                         </select>
                     </div>
                 </div>
             </section>
 
-            <section class="stats-grid" aria-label="Debug Summary">
-                <div class="panel">
-                    <div class="stat-value" id="visibleTraceCount">0</div>
-                    <div class="stat-label">Visible Traces</div>
+            <section class="stat-bar" aria-label="Debug summary">
+                <div class="stat">
+                    <span class="stat-value" id="visibleTraceCount">0</span>
+                    <span class="stat-label">Traces</span>
                 </div>
-                <div class="panel">
-                    <div class="stat-value" id="visibleEventCount">0</div>
-                    <div class="stat-label">Visible Events</div>
+                <div class="stat">
+                    <span class="stat-value" id="visibleEventCount">0</span>
+                    <span class="stat-label">Events</span>
                 </div>
-                <div class="panel">
-                    <div class="stat-value" id="failedTraceCount">0</div>
-                    <div class="stat-label">Failed Traces</div>
+                <div class="stat">
+                    <span class="stat-value" id="failedTraceCount">0</span>
+                    <span class="stat-label">Failed</span>
                 </div>
-                <div class="panel">
-                    <div class="stat-value" id="pinnedTraceCount">0</div>
-                    <div class="stat-label">Pinned Traces</div>
+                <div class="stat">
+                    <span class="stat-value" id="pinnedTraceCount">0</span>
+                    <span class="stat-label">Pinned</span>
                 </div>
             </section>
 
-            <section class="panel">
+            <section class="panel" aria-labelledby="traceExplorerTitle">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Trace Explorer</div>
-                        <p class="panel-subtitle">Pinned traces stay on top. Expand a chain to inspect every hop.</p>
+                        <h2 id="traceExplorerTitle" class="panel-title">Traces</h2>
+                        <p class="panel-subtitle">Pinned traces stay on top. Open a trace to inspect every hop.</p>
                     </div>
-                    <span id="resultSummary" class="toolbar-note" aria-live="polite"></span>
+                    <span id="resultSummary" class="status-note" aria-live="polite"></span>
                 </div>
-                <div id="loading" class="loading">Refreshing traces</div>
+                <div id="loading" class="loading">Refreshing…</div>
                 <div id="records" class="trace-list" aria-live="polite"></div>
             </section>
         </main>
@@ -656,6 +574,7 @@
     <script>
         const state = {
             records: [],
+            recordsSignature: '',
             lastRefresh: null,
             loading: false,
             autoRefreshPaused: false,
@@ -684,9 +603,9 @@
 
         function init() {
             renderShellHeader('debug', {
-                title: 'Debug Traces',
-                subtitle: 'Capture proxy requests, filter traces, and inspect payload metadata without visual noise.',
-                statusHTML: '<span id="debugModePill" class="status-pill warning">Debug Disabled</span><p id="refreshSummary" class="hero-meta">Waiting for the first successful refresh.</p>'
+                title: 'Debug traces',
+                statusHTML: '<span id="debugModePill" class="status-pill warning">Debug Disabled</span>'
+                    + '<span id="refreshSummary" class="status-note">Waiting for the first refresh.</span>'
             });
 
             refs.notice = document.getElementById('notice');
@@ -777,11 +696,24 @@
                 }
 
                 latestStatus = await statusResponse.json();
-                state.records = await recordsResponse.json();
+
+                // Re-rendering identical data would drop text selection and
+                // scroll position on every poll, so only render on change.
+                const records = await recordsResponse.json();
+                const signature = JSON.stringify(records);
+                const recordsChanged = signature !== state.recordsSignature;
+                if (recordsChanged) {
+                    state.recordsSignature = signature;
+                    state.records = records;
+                }
+
                 state.lastRefresh = new Date();
 
                 syncStatusControls();
-                render();
+
+                if (recordsChanged) {
+                    render();
+                }
 
                 if (!preserveNotice) {
                     showNotice('Debug data refreshed.', 'success');
@@ -818,20 +750,20 @@
 
         function updateRefreshSummary() {
             if (!latestStatus.enabled) {
-                refs.refreshSummary.textContent = 'Debug capture is disabled. Enable it to start collecting new traces.';
+                refs.refreshSummary.textContent = 'Debug capture is off.';
                 return;
             }
 
             if (state.autoRefreshPaused) {
                 refs.refreshSummary.textContent = state.lastRefresh
                     ? `Auto-refresh paused. Last refresh: ${formatTimestamp(state.lastRefresh.toISOString())}.`
-                    : 'Auto-refresh paused before the first successful refresh.';
+                    : 'Auto-refresh paused before the first refresh.';
                 return;
             }
 
             refs.refreshSummary.textContent = state.lastRefresh
-                ? `Auto-refresh every 2 seconds. Last refresh: ${formatTimestamp(state.lastRefresh.toISOString())}.`
-                : 'Waiting for the first successful refresh.';
+                ? `Auto-refresh every 2s. Last refresh: ${formatTimestamp(state.lastRefresh.toISOString())}.`
+                : 'Waiting for the first refresh.';
         }
 
         function updateAutoRefreshState() {
@@ -839,8 +771,7 @@
 
             refs.pauseButton.disabled = !latestStatus.enabled;
             refs.pauseButton.setAttribute('aria-pressed', state.autoRefreshPaused ? 'true' : 'false');
-            refs.pauseButton.textContent = state.autoRefreshPaused ? 'Resume Auto-Refresh' : 'Pause Auto-Refresh';
-            refs.pauseButton.className = state.autoRefreshPaused ? 'btn btn-ghost trace-pin' : 'btn btn-secondary';
+            refs.pauseButton.textContent = state.autoRefreshPaused ? 'Resume' : 'Pause';
 
             if (shouldPoll) {
                 startAutoRefresh();
@@ -952,6 +883,7 @@
                 expandedTraces.clear();
                 pinnedTraces.clear();
                 state.records = [];
+                state.recordsSignature = '';
                 render();
                 showNotice('All debug records cleared.', 'success');
                 refreshDashboard({ showLoading: false, preserveNotice: true });
@@ -1030,12 +962,12 @@
             updateRefreshSummary();
 
             if (allTraces.length === 0) {
-                refs.records.innerHTML = '<div class="empty-state">No traces yet. Enable debug mode and send traffic through the proxy to start capturing request chains.</div>';
+                refs.records.innerHTML = '<div class="empty-state">No traces yet. Enable debug capture and send traffic through the proxy to start recording request chains.</div>';
                 return;
             }
 
             if (visibleTraces.length === 0) {
-                refs.records.innerHTML = '<div class="empty-state">No traces match the current filters. Relax the search or filter settings to widen the result set.</div>';
+                refs.records.innerHTML = '<div class="empty-state">No traces match the current filters. Widen the search or filter settings to see more.</div>';
                 return;
             }
 
@@ -1238,33 +1170,31 @@
                             aria-expanded="${isExpanded ? 'true' : 'false'}"
                             aria-controls="${detailId}"
                         >
-                            <div class="trace-topline">
+                            <span class="trace-topline">
                                 <span class="trace-status ${trace.status.className}">${trace.status.text}</span>
-                                <span class="trace-chip id-chip mono">${traceId}</span>
+                                <span class="trace-chip id-chip">${traceId}</span>
                                 ${isPinned ? '<span class="trace-chip">Pinned</span>' : ''}
-                            </div>
-                            <div class="trace-request">
+                            </span>
+                            <span class="trace-request">
                                 <span class="trace-method">${escapeHtml(request.method || '-')}</span>
                                 <span class="trace-url">${escapeHtml(request.url || '(unknown route)')}</span>
-                            </div>
-                            <div class="trace-meta">
-                                <span class="trace-chip">${trace.records.length} events \u00b7 ${trace.outgoingCount} downstream</span>
+                            </span>
+                            <span class="trace-meta">
+                                <span class="trace-chip">${pluralize(trace.records.length, 'event')} · ${trace.outgoingCount} downstream</span>
                                 ${renderTraceBodyChip(root)}
-                            </div>
+                            </span>
                         </button>
                         <div class="trace-summary-meta">
                             <span class="trace-time">${formatTimestamp(trace.latestTimestamp)}</span>
-                            <div class="trace-actions">
-                                <button
-                                    type="button"
-                                    class="btn btn-ghost trace-pin"
-                                    data-action="pin-trace"
-                                    data-trace-id="${traceId}"
-                                    aria-pressed="${isPinned ? 'true' : 'false'}"
-                                >
-                                    ${isPinned ? 'Unpin' : 'Pin'}
-                                </button>
-                            </div>
+                            <button
+                                type="button"
+                                class="btn btn-ghost btn-sm"
+                                data-action="pin-trace"
+                                data-trace-id="${traceId}"
+                                aria-pressed="${isPinned ? 'true' : 'false'}"
+                            >
+                                ${isPinned ? 'Unpin' : 'Pin'}
+                            </button>
                         </div>
                     </div>
                     <div id="${detailId}" class="trace-details ${isExpanded ? 'show' : ''}">
@@ -1286,7 +1216,7 @@
                 return '<span class="trace-chip">Empty body</span>';
             }
 
-            return `<span class="trace-chip">${escapeHtml(body.kind || 'body')} \u00b7 ${formatBytes(body.size)}</span>`;
+            return `<span class="trace-chip">${escapeHtml(body.kind || 'body')} · ${formatBytes(body.size)}</span>`;
         }
 
         function renderRecordCard(record) {
@@ -1308,7 +1238,7 @@
                             </div>
                         </div>
                         <div class="record-card-meta">
-                            <span class="trace-chip id-chip mono">${escapeHtml(record.id || '')}</span>
+                            <span class="trace-chip id-chip">${escapeHtml(record.id || '')}</span>
                             <span class="trace-time">${formatTimestamp(record.timestamp)}</span>
                         </div>
                     </div>
@@ -1467,6 +1397,10 @@
                     ${fileCards}
                 </div>
             `;
+        }
+
+        function pluralize(count, noun) {
+            return `${count} ${noun}${count === 1 ? '' : 's'}`;
         }
 
         function formatTimestamp(timestamp) {

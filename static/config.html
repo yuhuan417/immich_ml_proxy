@@ -2,45 +2,28 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <meta name="theme-color" content="#ffffff">
     <title>Immich ML Proxy - Configuration</title>
     <link rel="stylesheet" href="/shared.css">
     <style>
-        .shell { max-width: 1380px; }
-
-        .summary-grid {
-            display: grid;
-            gap: 10px;
-            grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
-        }
-
-        .summary-value {
-            font-size: 20px;
-            font-weight: 700;
-            color: var(--text);
-        }
-
-        .summary-label {
-            color: var(--text-muted);
-            margin-top: 4px;
-            font-size: 11px;
-            letter-spacing: 0.02em;
-        }
-
-        .header-actions {
-            justify-content: flex-end;
-            margin-top: 6px;
-        }
-
-        .default-backend-control {
-            max-width: 520px;
-            margin-top: 12px;
-        }
-
         .field-grid {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
-            gap: 16px;
+            gap: 10px;
+            grid-template-columns: repeat(auto-fit, minmax(min(220px, 100%), 1fr));
+        }
+
+        .add-form {
+            display: grid;
+            gap: 10px;
+            margin-top: 12px;
+            padding-top: 12px;
+            border-top: 1px solid var(--border);
+        }
+
+        .form-actions {
+            display: flex;
+            justify-content: flex-end;
         }
 
         .collection {
@@ -52,122 +35,111 @@
             display: grid;
             gap: 8px;
             padding: 10px;
-            border-radius: 8px;
-            border: 1px solid var(--panel-border);
             background: var(--panel-muted);
+            border: 1px solid var(--border);
+            border-radius: 5px;
+            min-width: 0;
         }
 
-        .backend-row {
-            grid-template-columns: minmax(140px, 0.9fr) minmax(260px, 1.4fr) auto auto;
-            align-items: center;
-        }
+        /* Column headers: desktop only, they carry no information on mobile. */
 
-        .routing-row {
-            grid-template-columns: minmax(170px, 1.1fr) minmax(170px, 1fr) minmax(150px, 0.8fr) auto;
-            align-items: center;
-        }
+        /* The trailing columns are fixed so headers line up with the data rows. */
 
-        .add-form {
-            display: grid;
-            gap: 10px;
-            margin-top: 12px;
-            padding-top: 12px;
-            border-top: 1px solid var(--panel-border);
-        }
-
-        .add-form .form-actions {
-            display: flex;
-            justify-content: flex-end;
-        }
-
-        .helper-list {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 6px;
-            margin-top: 6px;
-        }
-
-        .helper-chip,
-        .health-badge {
-            display: inline-flex;
-            align-items: center;
-            justify-content: center;
-            padding: 3px 8px;
-            border-radius: 999px;
+        .row-head {
+            display: none;
+            gap: 8px;
+            padding: 0 11px 6px;
             font-size: 11px;
-            font-weight: 700;
-        }
-
-        .helper-chip {
-            background: #eef3f9;
+            font-weight: 650;
             color: var(--text-muted);
         }
 
-        .health-stack {
-            display: grid;
-            justify-items: end;
-            gap: 4px;
-            min-width: 118px;
+        .backend-row,
+        .row-head.backend-head {
+            grid-template-columns: minmax(0, 1fr) minmax(0, 1.7fr) 190px 90px;
         }
 
-        .health-badge.healthy {
-            background: var(--success-bg);
-            color: var(--success-text);
+        .routing-row,
+        .row-head.routing-head {
+            grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) 118px 90px;
         }
 
-        .health-badge.unhealthy {
-            background: var(--error-bg);
-            color: var(--error-text);
+        .backend-row,
+        .routing-row {
+            align-items: center;
         }
 
-        .health-badge.unknown {
-            background: #e2e8f0;
-            color: #465469;
+        .row-remove {
+            justify-self: end;
+        }
+
+        .row-health {
+            display: flex;
+            align-items: baseline;
+            gap: 6px;
+            min-width: 0;
         }
 
         .health-meta {
-            color: var(--text-muted);
             font-size: 12px;
-            text-align: right;
-            min-height: 16px;
-        }
-
-        .busy-indicator {
-            display: inline-flex;
-            align-items: center;
-            gap: 10px;
             color: var(--text-muted);
-            font-size: 13px;
-            min-height: 20px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
         }
 
-        .busy-indicator::before {
-            content: "";
-            width: 16px;
-            height: 16px;
-            border: 2px solid rgba(255, 107, 53, 0.22);
-            border-top-color: var(--accent);
-            border-radius: 50%;
-            animation: spin 0.6s linear infinite;
-            display: none;
+        @media (min-width: 901px) {
+            .row-head {
+                display: grid;
+            }
         }
 
-        .busy-indicator.busy::before {
-            display: inline-block;
-        }
+        @media (max-width: 900px) {
+            .backend-row {
+                grid-template-columns: minmax(0, 1fr) auto;
+            }
 
-        @media (max-width: 960px) {
-            .backend-row,
+            .backend-row .row-name {
+                grid-area: 1 / 1 / 2 / 2;
+            }
+
+            .backend-row .row-remove {
+                grid-area: 1 / 2 / 2 / 3;
+            }
+
+            .backend-row .row-url {
+                grid-area: 2 / 1 / 3 / 3;
+            }
+
+            .backend-row .row-health {
+                grid-area: 3 / 1 / 4 / 3;
+            }
+
             .routing-row {
-                grid-template-columns: 1fr;
+                grid-template-columns: minmax(0, 1fr) auto;
             }
 
-            .health-stack {
-                justify-items: start;
+            .routing-row .row-task,
+            .routing-row .row-modeltype {
+                grid-area: 1 / 1 / 2 / 2;
             }
 
-            .health-meta {
-                text-align: left;
+            .routing-row .row-remove {
+                grid-area: 1 / 2 / 2 / 3;
+            }
+
+            .routing-row .row-backend {
+                grid-area: 2 / 1 / 3 / 3;
+            }
+
+            .routing-row .row-policy {
+                grid-area: 3 / 1 / 4 / 3;
+            }
+        }
+
+        @media (max-width: 640px) {
+            .form-actions .btn {
+                width: 100%;
             }
         }
     </style>
@@ -177,60 +149,66 @@
         <main class="content">
             <div id="notice" class="notice" role="status" aria-live="polite"></div>
 
-            <section class="summary-grid" aria-label="Configuration Summary">
-                <div class="panel">
-                    <div class="summary-value" id="backendCount">0</div>
-                    <div class="summary-label">Configured Backends</div>
+            <section class="stat-bar" aria-label="Configuration summary">
+                <div class="stat">
+                    <span class="stat-value" id="backendCount">0</span>
+                    <span class="stat-label">Backends</span>
                 </div>
-                <div class="panel">
-                    <div class="summary-value" id="taskRouteCount">0</div>
-                    <div class="summary-label">Task Routes</div>
+                <div class="stat">
+                    <span class="stat-value" id="taskRouteCount">0</span>
+                    <span class="stat-label">Task routes</span>
                 </div>
-                <div class="panel">
-                    <div class="summary-value" id="modelRouteCount">0</div>
-                    <div class="summary-label">CLIP ModelType Routes</div>
+                <div class="stat">
+                    <span class="stat-value" id="modelRouteCount">0</span>
+                    <span class="stat-label">Model routes</span>
                 </div>
-                <div class="panel">
-                    <div class="summary-value" id="unhealthyCount">0</div>
-                    <div class="summary-label">Unhealthy Backends</div>
+                <div class="stat">
+                    <span class="stat-value" id="unhealthyCount">0</span>
+                    <span class="stat-label">Unhealthy</span>
                 </div>
             </section>
 
             <section class="panel">
                 <div class="panel-header">
                     <div>
-                        <div class="panel-title">Default Backend</div>
-                        <p class="panel-subtitle">Fallback destination for requests that do not match a task or modelType route.</p>
+                        <h2 class="panel-title">Default backend</h2>
+                        <p class="panel-subtitle">Fallback for requests that match no task or modelType route.</p>
                     </div>
                 </div>
-                <div class="field default-backend-control">
+                <div class="field field-narrow">
                     <label for="defaultBackend">Backend</label>
                     <select id="defaultBackend"></select>
-                    <p class="field-hint">If you remove the current default backend, the first remaining backend is promoted automatically.</p>
+                    <p class="field-hint">Removing the current default promotes the first remaining backend.</p>
                 </div>
             </section>
 
             <section class="panel" aria-labelledby="backendsTitle">
                 <div class="panel-header">
                     <div>
-                        <h2 id="backendsTitle" class="panel-title">Backend Servers</h2>
-                        <p class="panel-subtitle">Backend names are used as routing keys. Renaming updates all references automatically.</p>
+                        <h2 id="backendsTitle" class="panel-title">Backend servers</h2>
+                        <p class="panel-subtitle">Names are routing keys; renaming updates every reference.</p>
                     </div>
+                </div>
+                <div class="row-head backend-head" aria-hidden="true">
+                    <span>Name</span>
+                    <span>URL</span>
+                    <span>Health</span>
+                    <span></span>
                 </div>
                 <div id="backendList" class="collection"></div>
                 <form id="backendCreateForm" class="add-form">
                     <div class="field-grid">
                         <div class="field">
-                            <label for="newBackendName">Backend Name</label>
-                            <input type="text" id="newBackendName" name="backendName" placeholder="backend-primary" autocomplete="off">
+                            <label for="newBackendName">Name</label>
+                            <input type="text" id="newBackendName" name="backendName" placeholder="backend-primary" autocomplete="off" autocapitalize="off" spellcheck="false">
                         </div>
                         <div class="field">
-                            <label for="newBackendURL">Backend URL</label>
-                            <input type="text" id="newBackendURL" name="backendUrl" placeholder="http://localhost:3003" autocomplete="off">
+                            <label for="newBackendURL">URL</label>
+                            <input type="text" id="newBackendURL" name="backendUrl" placeholder="http://localhost:3003" autocomplete="off" autocapitalize="off" spellcheck="false" inputmode="url">
                         </div>
                     </div>
                     <div class="form-actions">
-                        <button class="btn btn-success" type="submit">Add Backend</button>
+                        <button class="btn btn-success" type="submit">Add backend</button>
                     </div>
                 </form>
             </section>
@@ -238,21 +216,23 @@
             <section class="panel" aria-labelledby="taskRoutingTitle">
                 <div class="panel-header">
                     <div>
-                        <h2 id="taskRoutingTitle" class="panel-title">Task Routing</h2>
-                        <p class="panel-subtitle">Route grouped requests like <code>facial-recognition</code> and <code>ocr</code>. <code>strict</code> always uses the routed backend; <code>fallback</code> steps down when unhealthy.</p>
+                        <h2 id="taskRoutingTitle" class="panel-title">Task routing</h2>
+                        <p class="panel-subtitle"><code>strict</code> always uses the routed backend; <code>fallback</code> steps down when it is unhealthy.</p>
                     </div>
                 </div>
-                <div class="helper-list" aria-hidden="true">
-                    <span class="helper-chip">clip</span>
-                    <span class="helper-chip">facial-recognition</span>
-                    <span class="helper-chip">ocr</span>
+                <p class="field-hint">Known tasks: clip, facial-recognition, ocr</p>
+                <div class="row-head routing-head" aria-hidden="true">
+                    <span>Task</span>
+                    <span>Backend</span>
+                    <span>Policy</span>
+                    <span></span>
                 </div>
-                <div id="routingList" class="collection" style="margin-top: 16px;"></div>
+                <div id="routingList" class="collection"></div>
                 <form id="routingCreateForm" class="add-form">
                     <div class="field-grid">
                         <div class="field">
-                            <label for="newTaskName">Task Name</label>
-                            <input type="text" id="newTaskName" list="taskSuggestions" placeholder="facial-recognition" autocomplete="off">
+                            <label for="newTaskName">Task name</label>
+                            <input type="text" id="newTaskName" list="taskSuggestions" placeholder="facial-recognition" autocomplete="off" autocapitalize="off" spellcheck="false">
                             <datalist id="taskSuggestions">
                                 <option value="clip"></option>
                                 <option value="facial-recognition"></option>
@@ -260,12 +240,12 @@
                             </datalist>
                         </div>
                         <div class="field">
-                            <label for="newTaskBackend">Target Backend</label>
+                            <label for="newTaskBackend">Target backend</label>
                             <select id="newTaskBackend"></select>
                         </div>
                     </div>
                     <div class="form-actions">
-                        <button class="btn btn-success" type="submit">Add Task Route</button>
+                        <button class="btn btn-success" type="submit">Add task route</button>
                     </div>
                 </form>
             </section>
@@ -273,15 +253,18 @@
             <section class="panel" aria-labelledby="modelRoutingTitle">
                 <div class="panel-header">
                     <div>
-                        <h2 id="modelRoutingTitle" class="panel-title">CLIP ModelType Routing</h2>
-                        <p class="panel-subtitle">Only CLIP is split by modelType. Missing routes fall back to task routing then default.</p>
+                        <h2 id="modelRoutingTitle" class="panel-title">CLIP modelType routing</h2>
+                        <p class="panel-subtitle">Only CLIP splits by modelType. Missing routes fall back to task routing, then default.</p>
                     </div>
                 </div>
-                <div class="helper-list" aria-hidden="true">
-                    <span class="helper-chip">textual</span>
-                    <span class="helper-chip">visual</span>
+                <p class="field-hint">modelType values: textual, visual</p>
+                <div class="row-head routing-head" aria-hidden="true">
+                    <span>ModelType</span>
+                    <span>Backend</span>
+                    <span>Policy</span>
+                    <span></span>
                 </div>
-                <div id="modelTypeRoutingList" class="collection" style="margin-top: 16px;"></div>
+                <div id="modelTypeRoutingList" class="collection"></div>
                 <form id="modelTypeCreateForm" class="add-form">
                     <div class="field-grid">
                         <div class="field">
@@ -293,12 +276,12 @@
                             </select>
                         </div>
                         <div class="field">
-                            <label for="newModelTypeBackend">Target Backend</label>
+                            <label for="newModelTypeBackend">Target backend</label>
                             <select id="newModelTypeBackend"></select>
                         </div>
                     </div>
                     <div class="form-actions">
-                        <button class="btn btn-success" type="submit">Add ModelType Route</button>
+                        <button class="btn btn-success" type="submit">Add modelType route</button>
                     </div>
                 </form>
             </section>
@@ -307,7 +290,6 @@
 
     <script src="/shared.js"></script>
     <script>
-        const TASK_SUGGESTIONS = ['clip', 'facial-recognition', 'ocr'];
         const MODEL_TYPES = ['textual', 'visual'];
         const ROUTING_POLICIES = ['strict', 'fallback'];
         const HEALTH_TEXT = {
@@ -330,8 +312,11 @@
         function init() {
             renderShellHeader('config', {
                 title: 'Configuration',
-                subtitle: 'Backends, routing rules, fallback policy, and health status in one compact view.',
-                statusHTML: '<span id="dirtyIndicator" class="status-pill success">Saved</span><p id="saveSummary" class="hero-meta">Server and browser state are in sync.</p><div class="btn-row header-actions"><button id="saveButton" class="btn btn-primary" type="button" disabled>Save</button><button id="reloadButton" class="btn btn-secondary" type="button">Reload</button></div><div id="busyIndicator" class="busy-indicator" aria-live="polite"></div>'
+                statusHTML: '<span id="dirtyIndicator" class="status-pill success">Saved</span>'
+                    + '<span id="saveSummary" class="status-note">Server and browser state are in sync.</span>'
+                    + '<span id="busyIndicator" class="busy-indicator" aria-live="polite"></span>'
+                    + '<button id="saveButton" class="btn btn-primary" type="button" disabled>Save</button>'
+                    + '<button id="reloadButton" class="btn btn-secondary" type="button">Reload</button>'
             });
 
             refs.notice = document.getElementById('notice');
@@ -553,14 +538,14 @@
             if (isSaving) {
                 refs.dirtyIndicator.textContent = 'Saving';
                 refs.dirtyIndicator.className = 'status-pill info';
-                refs.saveSummary.textContent = 'Persisting the current draft to the server.';
+                refs.saveSummary.textContent = 'Persisting the draft to the server.';
                 return;
             }
 
             if (dirty) {
-                refs.dirtyIndicator.textContent = 'Unsaved Changes';
+                refs.dirtyIndicator.textContent = 'Unsaved changes';
                 refs.dirtyIndicator.className = 'status-pill warning';
-                refs.saveSummary.textContent = 'Local edits have not been persisted yet.';
+                refs.saveSummary.textContent = 'Local edits are not saved to the server yet.';
                 return;
             }
 
@@ -591,24 +576,26 @@
             refs.backendList.innerHTML = '';
 
             if (config.backends.length === 0) {
-                refs.backendList.appendChild(createEmptyState('No backends configured yet. Add at least one backend before saving.'));
+                refs.backendList.appendChild(createEmptyState('No backends configured yet. Add at least one before saving.'));
                 return;
             }
 
             config.backends.forEach((backend, index) => {
                 const row = createElement('div', 'collection-row backend-row');
 
-                const nameInput = createTextInput(backend.name, 'Name');
+                const nameInput = createTextInput(backend.name, 'Name', 'Backend name');
+                nameInput.classList.add('row-name');
                 nameInput.dataset.action = 'backend-name';
                 nameInput.dataset.index = String(index);
 
-                const urlInput = createTextInput(backend.url, 'URL');
+                const urlInput = createTextInput(backend.url, 'URL', 'Backend URL');
+                urlInput.classList.add('row-url');
                 urlInput.dataset.action = 'backend-url';
                 urlInput.dataset.index = String(index);
 
                 const healthStack = createHealthStack(backend.name);
 
-                const removeButton = createButton('Remove', 'btn btn-danger', {
+                const removeButton = createButton('Remove', 'btn btn-ghost btn-sm row-remove', {
                     type: 'button',
                     dataAction: 'remove-backend',
                     dataIndex: String(index)
@@ -628,7 +615,7 @@
 
             const entries = Object.entries(config.taskRouting);
             if (entries.length === 0) {
-                refs.routingList.appendChild(createEmptyState('No task-specific routes yet. Requests will fall back to the default backend.'));
+                refs.routingList.appendChild(createEmptyState('No task-specific routes yet. Requests fall back to the default backend.'));
                 return;
             }
 
@@ -636,20 +623,22 @@
             for (const [taskName, backendName] of entries) {
                 const row = createElement('div', 'collection-row routing-row');
 
-                const taskInput = createTextInput(taskName, 'Task name');
+                const taskInput = createTextInput(taskName, 'Task name', 'Task name');
+                taskInput.classList.add('row-task');
                 taskInput.setAttribute('list', 'taskSuggestions');
                 taskInput.dataset.action = 'routing-task';
                 taskInput.dataset.task = taskName;
 
-                const backendSelect = createBackendSelect(backendName);
+                const backendSelect = createBackendSelect(backendName, 'row-backend');
                 backendSelect.dataset.action = 'routing-backend';
                 backendSelect.dataset.task = taskName;
 
                 const policySelect = createRoutingPolicySelect(config.taskRoutingPolicy[taskName] || 'strict');
+                policySelect.classList.add('row-policy');
                 policySelect.dataset.action = 'routing-policy';
                 policySelect.dataset.task = taskName;
 
-                const removeButton = createButton('Remove', 'btn btn-danger', {
+                const removeButton = createButton('Remove', 'btn btn-ghost btn-sm row-remove', {
                     type: 'button',
                     dataAction: 'remove-routing',
                     dataTask: taskName
@@ -669,7 +658,7 @@
 
             const entries = Object.entries(config.modelTypeRouting);
             if (entries.length === 0) {
-                refs.modelTypeRoutingList.appendChild(createEmptyState('No CLIP modelType routes yet. CLIP requests will use task routing and then the default backend.'));
+                refs.modelTypeRoutingList.appendChild(createEmptyState('No CLIP modelType routes yet. CLIP requests use task routing, then the default backend.'));
                 return;
             }
 
@@ -678,18 +667,20 @@
                 const row = createElement('div', 'collection-row routing-row');
 
                 const modelTypeSelect = createModelTypeSelect(modelType);
+                modelTypeSelect.classList.add('row-modeltype');
                 modelTypeSelect.dataset.action = 'model-type';
                 modelTypeSelect.dataset.modelType = modelType;
 
-                const backendSelect = createBackendSelect(backendName);
+                const backendSelect = createBackendSelect(backendName, 'row-backend');
                 backendSelect.dataset.action = 'model-backend';
                 backendSelect.dataset.modelType = modelType;
 
                 const policySelect = createRoutingPolicySelect(config.modelTypeRoutingPolicy[modelType] || 'strict');
+                policySelect.classList.add('row-policy');
                 policySelect.dataset.action = 'model-policy';
                 policySelect.dataset.modelType = modelType;
 
-                const removeButton = createButton('Remove', 'btn btn-danger', {
+                const removeButton = createButton('Remove', 'btn btn-ghost btn-sm row-remove', {
                     type: 'button',
                     dataAction: 'remove-model-route',
                     dataModelType: modelType
@@ -729,26 +720,38 @@
             if (options.dataModelType) {
                 button.dataset.modelType = options.dataModelType;
             }
+            if (options.ariaLabel) {
+                button.setAttribute('aria-label', options.ariaLabel);
+            }
             return button;
         }
 
-        function createTextInput(value, placeholder) {
+        function createTextInput(value, placeholder, ariaLabel) {
             const input = document.createElement('input');
             input.type = 'text';
             input.value = value;
             input.placeholder = placeholder;
             input.autocomplete = 'off';
+            input.spellcheck = false;
+            if (ariaLabel) {
+                input.setAttribute('aria-label', ariaLabel);
+            }
             return input;
         }
 
-        function createBackendSelect(selectedBackend) {
+        function createBackendSelect(selectedBackend, extraClass) {
             const select = document.createElement('select');
+            if (extraClass) {
+                select.classList.add(extraClass);
+            }
+            select.setAttribute('aria-label', 'Target backend');
             populateBackendSelect(select, 'Select backend', selectedBackend);
             return select;
         }
 
         function createModelTypeSelect(selectedModelType) {
             const select = document.createElement('select');
+            select.setAttribute('aria-label', 'ModelType');
 
             const placeholder = document.createElement('option');
             placeholder.value = '';
@@ -770,6 +773,7 @@
 
         function createRoutingPolicySelect(selectedPolicy) {
             const select = document.createElement('select');
+            select.setAttribute('aria-label', 'Routing policy');
             select.title = 'strict: always route to this backend, abort if unhealthy. fallback: route when healthy, skip to the next level otherwise.';
             for (const policy of ROUTING_POLICIES) {
                 const option = document.createElement('option');
@@ -805,7 +809,7 @@
         }
 
         function createHealthStack(backendName) {
-            const stack = createElement('div', 'health-stack');
+            const stack = createElement('div', 'row-health');
             const status = healthData[backendName] || { status: 'unknown', lastCheck: 0, error: '' };
 
             const badge = createElement('span', `health-badge ${status.status || 'unknown'}`, HEALTH_TEXT[status.status] || 'Unknown');
@@ -814,9 +818,10 @@
             const meta = createElement('span', 'health-meta');
             meta.dataset.healthMeta = backendName;
             meta.textContent = describeHealthMeta(status);
+            // The column is fixed width, so keep the full text reachable when clipped.
+            meta.title = status.error || meta.textContent;
             if (status.error) {
                 badge.title = status.error;
-                meta.title = status.error;
             }
 
             stack.appendChild(badge);
@@ -1198,7 +1203,7 @@
                 return;
             }
 
-            setBusy('Loading configuration...');
+            setBusy('Loading…');
             try {
                 const response = await fetch('/api/config');
                 if (!response.ok) {
@@ -1236,7 +1241,7 @@
 
             isSaving = true;
             renderActionState();
-            setBusy('Saving configuration...');
+            setBusy('Saving…');
 
             try {
                 const response = await fetch('/api/config', {
@@ -1293,7 +1298,7 @@
                 badge.textContent = HEALTH_TEXT[status.status] || 'Unknown';
                 badge.title = status.error || '';
                 meta.textContent = describeHealthMeta(status);
-                meta.title = status.error || '';
+                meta.title = status.error || meta.textContent;
             }
         }
 
